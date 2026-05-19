@@ -1,0 +1,9 @@
+# Built binary
+/gepa
+
+# Go test artifacts
+*.test
+coverage.out
+
+# Run artifacts produced by `gepa optimize`
+/runs/
