@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,19 +103,11 @@ func TestOptimizeMissingFile(t *testing.T) {
 	}
 }
 
+// TestOptimizeValidPaths covers the CLI-level path-wiring concern: that all
+// four required flags resolve to readable files and the body runs successfully.
+// End-to-end summary-content assertions live in optimize_integration_test.go.
 func TestOptimizeValidPaths(t *testing.T) {
-	dir := t.TempDir()
-	paths := map[string]string{
-		"program": filepath.Join(dir, "p.json"),
-		"config":  filepath.Join(dir, "c.json"),
-		"train":   filepath.Join(dir, "t.jsonl"),
-		"val":     filepath.Join(dir, "v.jsonl"),
-	}
-	for _, p := range paths {
-		if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
-			t.Fatalf("touch %s: %v", p, err)
-		}
-	}
+	paths := writeMinimalFixtures(t)
 
 	out, _, err := runCmd(t, "optimize",
 		"--program", paths["program"],
@@ -128,24 +118,8 @@ func TestOptimizeValidPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	var summary map[string]any
-	if err := json.Unmarshal([]byte(out), &summary); err != nil {
-		t.Fatalf("stdout not JSON: %v\n%s", err, out)
-	}
-	if summary["cmd"] != "optimize" {
-		t.Errorf("cmd = %v, want optimize", summary["cmd"])
-	}
-	for key, p := range paths {
-		if summary[key] != p {
-			t.Errorf("%s = %v, want %s", key, summary[key], p)
-		}
-	}
-	if summary["log_traces"] != false {
-		t.Errorf("log_traces = %v, want false", summary["log_traces"])
-	}
-	if summary["resume"] != "" {
-		t.Errorf("resume = %v, want empty", summary["resume"])
+	if !strings.Contains(out, "program:") || !strings.Contains(out, "train:") {
+		t.Errorf("expected summary block on stdout, got:\n%s", out)
 	}
 }
 
@@ -167,12 +141,9 @@ func TestOptimizeResumeExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	var summary map[string]any
-	if err := json.Unmarshal([]byte(out), &summary); err != nil {
-		t.Fatalf("stdout not JSON: %v\n%s", err, out)
-	}
-	if summary["resume"] != dir {
-		t.Errorf("resume = %v, want %s", summary["resume"], dir)
+	want := "resume: " + dir
+	if !strings.Contains(out, want) {
+		t.Errorf("stdout = %q, want substring %q", out, want)
 	}
 }
 

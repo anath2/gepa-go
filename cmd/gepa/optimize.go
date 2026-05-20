@@ -1,13 +1,15 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/anath2/gepa-go/internal/config"
+	"github.com/anath2/gepa-go/internal/program"
 )
 
 type optimizeFlags struct {
@@ -87,20 +89,41 @@ func newOptimizeCmd() *cobra.Command {
 				if !info.IsDir() {
 					return fmt.Errorf("%s is not a directory", f.resume)
 				}
+				fmt.Fprintf(cmd.OutOrStdout(), "resume: %s (snapshot reading deferred to Phase 3)\n", f.resume)
+				return nil
 			}
 
-			summary := map[string]any{
-				"cmd":        "optimize",
-				"program":    f.program,
-				"config":     f.config,
-				"train":      f.train,
-				"val":        f.val,
-				"run_id":     f.runID,
-				"resume":     f.resume,
-				"log_traces": f.logTraces,
+			prog, err := program.Load(f.program)
+			if err != nil {
+				return err
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			return enc.Encode(summary)
+			cfg, err := config.Load(f.config)
+			if err != nil {
+				return err
+			}
+			if err := cfg.ValidateAgainstProgram(prog); err != nil {
+				return err
+			}
+			if err := prog.ValidateAgainstDatasetInputSchema(prog.Modules[0].InputSchema); err != nil {
+				return err
+			}
+			train, err := program.LoadDataset(f.train, prog.Modules[0].InputSchema, cfg.Metric.Field)
+			if err != nil {
+				return err
+			}
+			val, err := program.LoadDataset(f.val, prog.Modules[0].InputSchema, cfg.Metric.Field)
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "program:  %d modules, %d tools\n", len(prog.Modules), len(prog.Tools))
+			fmt.Fprintf(out, "config:   budget=%d minibatch=%d seed=%d\n", cfg.Budget, cfg.MinibatchSize, cfg.Seed)
+			fmt.Fprintf(out, "models:   task=%s  reflection=%s\n", cfg.TaskModel, cfg.ReflectionModel)
+			fmt.Fprintf(out, "metric:   %s on %q\n", cfg.Metric.Kind, cfg.Metric.Field)
+			fmt.Fprintf(out, "train:    %d examples\n", len(train))
+			fmt.Fprintf(out, "val:      %d examples\n", len(val))
+			return nil
 		},
 	}
 
