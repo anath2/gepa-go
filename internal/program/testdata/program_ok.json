@@ -1,0 +1,31 @@
+{
+  "modules": [
+    {
+      "name": "retriever",
+      "prompt": "Given a question, decide which documents to fetch.",
+      "input_schema": { "type": "object", "fields": { "question": "string" } },
+      "output_schema": { "type": "object", "fields": { "docs": "list[string]" } },
+      "tools": ["fetch_doc"],
+      "max_tool_steps": 4
+    },
+    {
+      "name": "answerer",
+      "prompt": "Given a question and supporting documents, produce the answer.",
+      "input_schema": {
+        "type": "object",
+        "fields": { "question": "string", "docs": "list[string]" }
+      },
+      "output_schema": { "type": "object", "fields": { "answer": "string" } }
+    }
+  ],
+  "tools": {
+    "fetch_doc": {
+      "name": "fetch_doc",
+      "kind": "external",
+      "description": "Fetch a Wikipedia document by title.",
+      "command": ["python", "scripts/fetch.py"],
+      "input_schema": { "type": "object", "fields": { "title": "string" } },
+      "output_schema": { "type": "object", "fields": { "text": "string" } }
+    }
+  }
+}
