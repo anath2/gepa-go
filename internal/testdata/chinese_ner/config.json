@@ -1,0 +1,11 @@
+{
+  "budget": 12,
+  "minibatch_size": 3,
+  "default_max_tool_steps": 8,
+  "seed": 20260522,
+  "reflection_model": "~moonshotai/kimi-latest",
+  "task_model": "arcee-ai/trinity-mini",
+  "metric": { "kind": "exact_match", "field": "entities_json" },
+  "log_dir": "./runs/",
+  "log_traces": true
+}

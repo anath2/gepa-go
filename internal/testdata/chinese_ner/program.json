@@ -1,0 +1,110 @@
+{
+  "modules": [
+    {
+      "name": "segmenter",
+      "prompt": "Break the Chinese input text into meaningful segments for named entity recognition. Preserve the original character offsets using zero-based, end-exclusive rune positions. The entity_types field declares the labels that a later module may choose from; do not invent labels here.",
+      "input_schema": {
+        "type": "object",
+        "fields": {
+          "text": "string",
+          "entity_types": "list[string]"
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "fields": {
+          "segments": {
+            "type": "list",
+            "item": {
+              "type": "object",
+              "fields": {
+                "text": "string",
+                "start": "int",
+                "end": "int"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "pinyin_converter",
+      "prompt": "For each segment, generate pinyin using the full sentence as context. Keep the segment text and character offsets unchanged.",
+      "input_schema": {
+        "type": "object",
+        "fields": {
+          "text": "string",
+          "entity_types": "list[string]",
+          "segments": {
+            "type": "list",
+            "item": {
+              "type": "object",
+              "fields": {
+                "text": "string",
+                "start": "int",
+                "end": "int"
+              }
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "fields": {
+          "segments_with_pinyin": {
+            "type": "list",
+            "item": {
+              "type": "object",
+              "fields": {
+                "text": "string",
+                "start": "int",
+                "end": "int",
+                "pinyin": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "ner",
+      "prompt": "For each segment, choose exactly one label from entity_types using the segment text, pinyin, and full sentence context. Use NONE for non-entities and omit NONE segments from the final output. Return entities_json as compact canonical JSON with shape {\"entities\":[{\"text\":\"...\",\"type\":\"PERSON|ORG|LOC\",\"start\":0,\"end\":2}]} and preserve original offsets.",
+      "input_schema": {
+        "type": "object",
+        "fields": {
+          "text": "string",
+          "entity_types": "list[string]",
+          "segments": {
+            "type": "list",
+            "item": {
+              "type": "object",
+              "fields": {
+                "text": "string",
+                "start": "int",
+                "end": "int"
+              }
+            }
+          },
+          "segments_with_pinyin": {
+            "type": "list",
+            "item": {
+              "type": "object",
+              "fields": {
+                "text": "string",
+                "start": "int",
+                "end": "int",
+                "pinyin": "string"
+              }
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "fields": {
+          "entities_json": "string"
+        }
+      }
+    }
+  ]
+}
