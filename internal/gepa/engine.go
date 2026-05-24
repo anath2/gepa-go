@@ -50,7 +50,7 @@ func withDefaults(opts Options) Options {
 		opts.Reflector = defaultReflector{}
 	}
 	if opts.Selector == nil {
-		opts.Selector = defaultSelector{}
+		opts.Selector = ParetoSelector{}
 	}
 	return opts
 }
@@ -61,8 +61,3 @@ func (defaultEvaluator) Evaluate(context.Context, Candidate, []program.Example) 
 	return nil, ErrEvaluatorNotImplemented
 }
 
-type defaultSelector struct{}
-
-func (defaultSelector) SelectCandidate(State, *rand.Rand) (int, error) {
-	return 0, ErrSelectorNotImplemented
-}
