@@ -3,7 +3,6 @@ package gepa
 import (
 	"context"
 	"errors"
-	"math/rand"
 	"strings"
 	"testing"
 
@@ -26,7 +25,6 @@ func TestOptionsHoldsInputsAndDependencies(t *testing.T) {
 		LogTraces: true,
 		Evaluator: fakeEvaluator{},
 		Reflector: fakeReflector{},
-		Selector:  fakeSelector{},
 	}
 
 	if len(opts.Program.Modules) != 1 {
@@ -38,7 +36,7 @@ func TestOptionsHoldsInputsAndDependencies(t *testing.T) {
 	if len(opts.Train) != 1 || len(opts.Val) != 1 {
 		t.Fatalf("train/val lengths = %d/%d, want 1/1", len(opts.Train), len(opts.Val))
 	}
-	if opts.Evaluator == nil || opts.Reflector == nil || opts.Selector == nil {
+	if opts.Evaluator == nil || opts.Reflector == nil {
 		t.Fatal("expected dependencies to be assignable on Options")
 	}
 }
@@ -99,10 +97,4 @@ type fakeReflector struct{}
 
 func (fakeReflector) Propose(context.Context, ReflectionRequest) (string, error) {
 	return "better prompt", nil
-}
-
-type fakeSelector struct{}
-
-func (fakeSelector) SelectCandidate(State, *rand.Rand) (int, error) {
-	return 0, nil
 }

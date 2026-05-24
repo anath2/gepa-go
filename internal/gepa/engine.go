@@ -3,7 +3,6 @@ package gepa
 import (
 	"context"
 	"errors"
-	"math/rand"
 
 	"github.com/anath2/gepa-go/internal/config"
 	"github.com/anath2/gepa-go/internal/program"
@@ -12,7 +11,6 @@ import (
 var (
 	ErrOptimizeNotImplemented  = errors.New("gepa optimize loop not implemented")
 	ErrEvaluatorNotImplemented = errors.New("rollout evaluator not implemented")
-	ErrSelectorNotImplemented  = errors.New("candidate selector not implemented")
 )
 
 type Options struct {
@@ -25,15 +23,10 @@ type Options struct {
 
 	Evaluator Evaluator
 	Reflector Reflector
-	Selector  Selector
 }
 
 type Evaluator interface {
 	Evaluate(ctx context.Context, candidate Candidate, examples []program.Example) ([]ExampleResult, error)
-}
-
-type Selector interface {
-	SelectCandidate(state State, rng *rand.Rand) (int, error)
 }
 
 func Optimize(ctx context.Context, opts Options) (Result, error) {
@@ -48,9 +41,6 @@ func withDefaults(opts Options) Options {
 	}
 	if opts.Reflector == nil {
 		opts.Reflector = defaultReflector{}
-	}
-	if opts.Selector == nil {
-		opts.Selector = ParetoSelector{}
 	}
 	return opts
 }
