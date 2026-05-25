@@ -133,6 +133,24 @@ func TestDatasetD6ExpectedFieldMissing(t *testing.T) {
 	}
 }
 
+func TestDatasetD7EmptyFile(t *testing.T) {
+	path := writeJSONL(t, "")
+	_, err := LoadDataset(path, firstInputSchema(), "answer")
+	want := path + ": at least one example required"
+	if err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
+	}
+}
+
+func TestDatasetD7BlankLinesOnly(t *testing.T) {
+	path := writeJSONL(t, "\n\n\n")
+	_, err := LoadDataset(path, firstInputSchema(), "answer")
+	want := path + ": at least one example required"
+	if err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
+	}
+}
+
 func TestDatasetMissingFile(t *testing.T) {
 	_, err := LoadDataset("/tmp/does/not/exist.jsonl", firstInputSchema(), "answer")
 	if err == nil {

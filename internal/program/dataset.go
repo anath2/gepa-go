@@ -15,7 +15,7 @@ type Example struct {
 	Expected map[string]any
 }
 
-// LoadDataset reads a JSONL file, applying rules D1–D6 per row. firstInput is
+// LoadDataset reads a JSONL file, applying rules D1–D7 per row. firstInput is
 // the schema each row's `input` is validated against (in v0, this is the first
 // module's input_schema). metricField is the key the metric will read from
 // each row's `expected`.
@@ -86,6 +86,10 @@ func LoadDataset(path string, firstInput Schema, metricField string) ([]Example,
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	// D7
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s: at least one example required", path)
 	}
 	return out, nil
 }
