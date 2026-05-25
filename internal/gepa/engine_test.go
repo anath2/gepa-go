@@ -1,0 +1,354 @@
+package gepa
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+
+	"github.com/anath2/gepa-go/internal/config"
+	"github.com/anath2/gepa-go/internal/program"
+)
+
+func TestOptionsHoldsInputsAndDependencies(t *testing.T) {
+	prog := program.Program{Modules: []program.Module{{Name: "answer", Prompt: "answer"}}}
+	cfg := engineConfig(10, 3, 7)
+	train := []program.Example{{Input: map[string]any{"question": "q"}, Expected: map[string]any{"answer": "a"}}}
+	val := []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}}
+
+	opts := Options{
+		Program:   prog,
+		Config:    cfg,
+		Train:     train,
+		Val:       val,
+		RunDir:    "runs/test",
+		LogTraces: true,
+		Evaluator: fakeEvaluator{},
+		Reflector: fakeReflector{},
+	}
+
+	if len(opts.Program.Modules) != 1 {
+		t.Fatalf("Program modules = %d, want 1", len(opts.Program.Modules))
+	}
+	if opts.Config.Seed != 7 {
+		t.Fatalf("Config seed = %d, want 7", opts.Config.Seed)
+	}
+	if len(opts.Train) != 1 || len(opts.Val) != 1 {
+		t.Fatalf("train/val lengths = %d/%d, want 1/1", len(opts.Train), len(opts.Val))
+	}
+	if opts.Evaluator == nil || opts.Reflector == nil {
+		t.Fatal("expected dependencies to be assignable on Options")
+	}
+}
+
+func TestOptimizeStubInstallsDefaultsAndReturnsNotImplemented(t *testing.T) {
+	opts := Options{
+		Program: program.Program{Modules: []program.Module{{Name: "answer", Prompt: "answer"}}},
+		Config:  engineConfig(10, 3, 7),
+		Train:   []program.Example{{Input: map[string]any{"question": "q"}, Expected: map[string]any{"answer": "a"}}},
+	}
+
+	_, err := Optimize(context.Background(), opts)
+	if err == nil {
+		t.Fatal("Optimize() error = nil, want not implemented")
+	}
+	if !errors.Is(err, ErrEvaluatorNotImplemented) {
+		t.Fatalf("Optimize() error = %v, want ErrEvaluatorNotImplemented", err)
+	}
+}
+
+func TestDefaultEvaluatorReturnsStableNotImplementedError(t *testing.T) {
+	results, err := defaultEvaluator{}.Evaluate(context.Background(), Candidate{"answer": "prompt"}, nil)
+	if err == nil {
+		t.Fatal("Evaluate() error = nil, want not implemented")
+	}
+	if results != nil {
+		t.Fatalf("Evaluate() results = %#v, want nil", results)
+	}
+	if !errors.Is(err, ErrEvaluatorNotImplemented) {
+		t.Fatalf("Evaluate() error = %v, want ErrEvaluatorNotImplemented", err)
+	}
+}
+
+func TestDefaultReflectorReturnsStableNotImplementedError(t *testing.T) {
+	proposal, err := defaultReflector{}.Propose(context.Background(), ReflectionRequest{
+		Candidate:  Candidate{"answer": "prompt"},
+		ParentID:   0,
+		ModuleName: "answer",
+	})
+	if err == nil {
+		t.Fatal("Propose() error = nil, want not implemented")
+	}
+	if proposal != "" {
+		t.Fatalf("Propose() proposal = %q, want empty", proposal)
+	}
+	if !errors.Is(err, ErrReflectorNotImplemented) {
+		t.Fatalf("Propose() error = %v, want ErrReflectorNotImplemented", err)
+	}
+}
+
+func TestOptimizeEvaluatesSeedOnFullTrain(t *testing.T) {
+	prog := twoModuleProgram()
+	train := makeTrainExamples(4)
+	opts := baseOpts(prog, train, engineConfig(20, 2, 1))
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor: func(Candidate, []program.Example) float64 { return 0.25 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if result.MetricCalls < len(train) {
+		t.Fatalf("MetricCalls = %d, want at least %d", result.MetricCalls, len(train))
+	}
+	if result.BestCandidate != 0 {
+		t.Fatalf("BestCandidate = %d, want 0", result.BestCandidate)
+	}
+	if result.TrainMean != 0.25 {
+		t.Fatalf("TrainMean = %v, want 0.25", result.TrainMean)
+	}
+}
+
+func TestOptimizeCountsBudgetByMetricCallsNotIterations(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(3)
+	opts := baseOpts(prog, train, engineConfig(3, 1, 2))
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if result.MetricCalls != 3 {
+		t.Fatalf("MetricCalls = %d, want 3 (seed only)", result.MetricCalls)
+	}
+}
+
+func TestOptimizeStopsBeforeBudgetOverflow(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	opts := baseOpts(prog, train, engineConfig(len(train), 2, 3))
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if result.MetricCalls != len(train) {
+		t.Fatalf("MetricCalls = %d, want %d (no proposal work)", result.MetricCalls, len(train))
+	}
+}
+
+func TestOptimizeAcceptsStrictMinibatchImprovement(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	opts := baseOpts(prog, train, engineConfig(20, 2, 4))
+	trainLen := len(train)
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: trainLen,
+		scoreFor: func(c Candidate, examples []program.Example) float64 {
+			if len(examples) < trainLen {
+				if c["answer"] == "answer v2" {
+					return 1
+				}
+				return 0
+			}
+			if c["answer"] == "answer v2" {
+				return 1
+			}
+			return 0.25
+		},
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if result.BestCandidate == 0 {
+		t.Fatal("BestCandidate still seed, want accepted reflection candidate")
+	}
+}
+
+func TestOptimizeRejectsEqualOrLowerProposal(t *testing.T) {
+	prog := twoModuleProgram()
+	train := makeTrainExamples(4)
+	opts := baseOpts(prog, train, engineConfig(20, 2, 5))
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer seed"}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if result.BestCandidate != 0 {
+		t.Fatalf("BestCandidate = %d, want seed candidate 0", result.BestCandidate)
+	}
+}
+
+func TestOptimizeHandlesReflectionFailureWithoutNewCandidate(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	opts := baseOpts(prog, train, engineConfig(20, 2, 6))
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{err: errors.New("reflection failed")}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if result.BestCandidate != 0 {
+		t.Fatalf("BestCandidate = %d, want seed after reflection failure", result.BestCandidate)
+	}
+	if result.MetricCalls < len(train)+2 {
+		t.Fatalf("MetricCalls = %d, want parent minibatch counted", result.MetricCalls)
+	}
+}
+
+func TestOptimizeUsesRoundRobinModuleSelection(t *testing.T) {
+	prog := twoModuleProgram()
+	train := makeTrainExamples(4)
+	opts := baseOpts(prog, train, engineConfig(30, 2, 7))
+	ref := &scriptedReflector{proposal: "answer v2"}
+	trainLen := len(train)
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: trainLen,
+		scoreFor: func(c Candidate, examples []program.Example) float64 {
+			if len(examples) < trainLen {
+				if c["answer"] == "answer v2" {
+					return 1
+				}
+				return 0
+			}
+			return 0
+		},
+	}
+	opts.Reflector = ref
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	want := []string{"retriever", "answer"}
+	if len(ref.modules) < 2 {
+		t.Fatalf("reflector modules = %v, want at least 2 calls", ref.modules)
+	}
+	if !reflect.DeepEqual(ref.modules[:2], want) {
+		t.Fatalf("first reflection modules = %v, want %v", ref.modules[:2], want)
+	}
+}
+
+func validEngineConfig() config.Config {
+	return config.Config{
+		Budget:              100,
+		MinibatchSize:       3,
+		DefaultMaxToolSteps: 8,
+		Seed:                42,
+		ReflectionModel:     "test/reflection",
+		TaskModel:           "test/task",
+		Metric:              config.Metric{Kind: "exact_match", Field: "answer"},
+	}
+}
+
+func engineConfig(budget, minibatch int, seed int64) config.Config {
+	cfg := validEngineConfig()
+	cfg.Budget = budget
+	cfg.MinibatchSize = minibatch
+	cfg.Seed = seed
+	return cfg
+}
+
+func baseOpts(prog program.Program, train []program.Example, cfg config.Config) Options {
+	return Options{
+		Program: prog,
+		Config:  cfg,
+		Train:   train,
+		Val:     []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}},
+	}
+}
+
+func singleModuleProgram() program.Program {
+	return program.Program{
+		Modules: []program.Module{{Name: "answer", Prompt: "answer seed"}},
+	}
+}
+
+func twoModuleProgram() program.Program {
+	return program.Program{
+		Modules: []program.Module{
+			{Name: "retriever", Prompt: "retrieve context"},
+			{Name: "answer", Prompt: "answer seed"},
+		},
+	}
+}
+
+func makeTrainExamples(n int) []program.Example {
+	out := make([]program.Example, n)
+	for i := range out {
+		out[i] = program.Example{
+			Input:    map[string]any{"question": "q"},
+			Expected: map[string]any{"answer": "a"},
+		}
+	}
+	return out
+}
+
+type fakeEvaluator struct{}
+
+func (fakeEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
+	return []ExampleResult{{Score: 1, Feedback: "ok"}}, nil
+}
+
+type fakeReflector struct{}
+
+func (fakeReflector) Propose(context.Context, ReflectionRequest) (string, error) {
+	return "better prompt", nil
+}
+
+type scriptedEvaluator struct {
+	trainSize int
+	scoreFor  func(candidate Candidate, examples []program.Example) float64
+}
+
+func (e *scriptedEvaluator) Evaluate(_ context.Context, candidate Candidate, examples []program.Example) ([]ExampleResult, error) {
+	scoreFn := e.scoreFor
+	if scoreFn == nil {
+		scoreFn = func(Candidate, []program.Example) float64 { return 0 }
+	}
+	out := make([]ExampleResult, len(examples))
+	for i := range out {
+		out[i] = ExampleResult{Score: scoreFn(candidate, examples), Feedback: "ok"}
+	}
+	return out, nil
+}
+
+type scriptedReflector struct {
+	proposal string
+	err      error
+	modules  []string
+}
+
+func (r *scriptedReflector) Propose(_ context.Context, req ReflectionRequest) (string, error) {
+	r.modules = append(r.modules, req.ModuleName)
+	if r.err != nil {
+		return "", r.err
+	}
+	return r.proposal, nil
+}
