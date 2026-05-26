@@ -35,20 +35,16 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 
 	trainLen := len(opts.Train)
 	rng := newRNG(opts.Config.Seed)
-	seedCandidate := SeedCandidate(opts.Program)
-	state := State{
-		Candidates:    []CandidateRecord{NewSeedRecord(opts.Program)},
-		TrainScores:   make([][]float64, 1),
-		BestCandidate: 0,
-	}
+	state := NewState(opts.Program)
 
-	seedResults, err := opts.Evaluator.Evaluate(ctx, seedCandidate, opts.Train)
+	seedResults, err := opts.Evaluator.Evaluate(ctx, state.Candidates[0].Prompts, opts.Train)
 	if err != nil {
 		return Result{}, err
 	}
-	state.MetricCalls += len(seedResults)
-	state.TrainScores[0] = scores(seedResults)
-	if err := recomputeBestCandidate(&state); err != nil {
+	if err := AddMetricCalls(&state, len(seedResults)); err != nil {
+		return Result{}, err
+	}
+	if err := SetSeedTrainScores(&state, trainLen, scores(seedResults)); err != nil {
 		return Result{}, err
 	}
 
@@ -82,7 +78,9 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		state.MetricCalls += len(parentResults)
+		if err := AddMetricCalls(&state, len(parentResults)); err != nil {
+			return Result{}, err
+		}
 		parentMean, err := meanScore(scores(parentResults))
 		if err != nil {
 			return Result{}, err
@@ -97,7 +95,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			Results:      parentResults,
 		})
 		if err != nil {
-			state.Iteration++
+			BumpIteration(&state)
 			continue
 		}
 
@@ -107,14 +105,16 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		state.MetricCalls += len(proposalResults)
+		if err := AddMetricCalls(&state, len(proposalResults)); err != nil {
+			return Result{}, err
+		}
 		proposalMean, err := meanScore(scores(proposalResults))
 		if err != nil {
 			return Result{}, err
 		}
 
 		if !strictlyImproves(parentMean, proposalMean) {
-			state.Iteration++
+			BumpIteration(&state)
 			continue
 		}
 
@@ -126,22 +126,20 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		state.MetricCalls += len(fullResults)
-
-		newID := len(state.Candidates)
-		state.Candidates = append(state.Candidates, CandidateRecord{
-			ID:            newID,
+		if err := AddMetricCalls(&state, len(fullResults)); err != nil {
+			return Result{}, err
+		}
+		if _, err := AcceptCandidate(&state, trainLen, AcceptCandidateParams{
 			ParentIDs:     []int{parentID},
 			ProposalKind:  ProposalReflection,
 			MutatedModule: moduleName,
 			CreatedAtIter: iter + 1,
-			Prompts:       cloneCandidate(proposal),
-		})
-		state.TrainScores = append(state.TrainScores, scores(fullResults))
-		if err := recomputeBestCandidate(&state); err != nil {
+			Prompts:       proposal,
+			TrainScores:   scores(fullResults),
+		}); err != nil {
 			return Result{}, err
 		}
-		state.Iteration++
+		BumpIteration(&state)
 	}
 
 	result := Result{
@@ -160,7 +158,9 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		state.MetricCalls += len(valResults)
+		if err := AddMetricCalls(&state, len(valResults)); err != nil {
+			return Result{}, err
+		}
 		valMean, err := meanScore(scores(valResults))
 		if err != nil {
 			return Result{}, err
@@ -182,29 +182,6 @@ func withDefaults(opts Options) Options {
 		opts.Reflector = defaultReflector{}
 	}
 	return opts
-}
-
-func recomputeBestCandidate(state *State) error {
-	if len(state.Candidates) == 0 {
-		return fmt.Errorf("recompute best candidate: empty candidate pool")
-	}
-	best := 0
-	bestMean, err := meanScore(state.TrainScores[0])
-	if err != nil {
-		return err
-	}
-	for i := 1; i < len(state.Candidates); i++ {
-		mean, err := meanScore(state.TrainScores[i])
-		if err != nil {
-			return err
-		}
-		if mean > bestMean {
-			best = i
-			bestMean = mean
-		}
-	}
-	state.BestCandidate = best
-	return nil
 }
 
 type defaultEvaluator struct{}

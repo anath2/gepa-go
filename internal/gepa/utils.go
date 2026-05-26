@@ -83,15 +83,6 @@ func moduleNameAtIteration(prog program.Program, iter int) (string, error) {
 	return prog.Modules[iter%len(prog.Modules)].Name, nil
 }
 
-// cloneCandidate returns a shallow copy of a candidate prompt map.
-func cloneCandidate(candidate Candidate) Candidate {
-	out := make(Candidate, len(candidate))
-	for name, prompt := range candidate {
-		out[name] = prompt
-	}
-	return out
-}
-
 // minibatchCost returns how many metric calls a minibatch evaluation consumes.
 func minibatchCost(trainLen, minibatchSize int) int {
 	if minibatchSize >= trainLen {
