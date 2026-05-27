@@ -74,7 +74,7 @@ func TestLoadConfigUnknownField(t *testing.T) {
 func TestValidateC1ZeroBudget(t *testing.T) {
 	c := validConfig()
 	c.Budget = 0
-	err := c.Validate()
+	err := c.validate()
 	want := "config.json: budget: must be > 0"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -89,7 +89,7 @@ func TestValidateC2ZeroMinibatch(t *testing.T) {
 	// after defaults are applied is not possible through Load(), but Validate
 	// must defend against it.
 	c.MinibatchSize = -1
-	err := c.Validate()
+	err := c.validate()
 	want := "config.json: minibatch_size: must be > 0"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -99,7 +99,7 @@ func TestValidateC2ZeroMinibatch(t *testing.T) {
 func TestValidateC3ZeroMaxToolSteps(t *testing.T) {
 	c := validConfig()
 	c.DefaultMaxToolSteps = -1
-	err := c.Validate()
+	err := c.validate()
 	want := "config.json: default_max_tool_steps: must be > 0"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -109,7 +109,7 @@ func TestValidateC3ZeroMaxToolSteps(t *testing.T) {
 func TestValidateC4EmptyReflectionModel(t *testing.T) {
 	c := validConfig()
 	c.ReflectionModel = ""
-	err := c.Validate()
+	err := c.validate()
 	want := "config.json: reflection_model: required"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -119,7 +119,7 @@ func TestValidateC4EmptyReflectionModel(t *testing.T) {
 func TestValidateC5EmptyTaskModel(t *testing.T) {
 	c := validConfig()
 	c.TaskModel = ""
-	err := c.Validate()
+	err := c.validate()
 	want := "config.json: task_model: required"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -129,7 +129,7 @@ func TestValidateC5EmptyTaskModel(t *testing.T) {
 func TestValidateC6UnsupportedMetricKind(t *testing.T) {
 	c := validConfig()
 	c.Metric.Kind = "f1"
-	err := c.Validate()
+	err := c.validate()
 	want := `config.json: metric.kind: only "exact_match" supported in v0, got "f1"`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -139,7 +139,7 @@ func TestValidateC6UnsupportedMetricKind(t *testing.T) {
 func TestValidateC7EmptyMetricField(t *testing.T) {
 	c := validConfig()
 	c.Metric.Field = ""
-	err := c.Validate()
+	err := c.validate()
 	want := "config.json: metric.field: required"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)

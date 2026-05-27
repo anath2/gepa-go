@@ -46,7 +46,7 @@ func Load(path string) (Config, error) {
 	}
 	c.file = path
 	c.applyDefaults()
-	if err := c.Validate(); err != nil {
+	if err := c.validate(); err != nil {
 		return Config{}, err
 	}
 	return c, nil
@@ -73,7 +73,7 @@ func (c Config) label() string {
 
 // Validate applies rules C1–C7 in order. Run after applyDefaults so that
 // defaulted fields aren't reported as zero. C8 (seed is any int64) is a no-op.
-func (c Config) Validate() error {
+func (c Config) validate() error {
 	file := c.label()
 
 	if c.Budget <= 0 {

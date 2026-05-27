@@ -55,7 +55,7 @@ func Load(path string) (Program, error) {
 		return Program{}, fmt.Errorf("%s: %w", path, err)
 	}
 	p.file = path
-	if err := p.Validate(); err != nil {
+	if err := p.validate(); err != nil {
 		return Program{}, err
 	}
 	return p, nil
@@ -70,7 +70,7 @@ func (p Program) label() string {
 
 // Validate applies rules P1–P12. The first failing rule produces an error and
 // returns; rule order is fixed so messages are deterministic.
-func (p Program) Validate() error {
+func (p Program) validate() error {
 	file := p.label()
 
 	// P1

@@ -47,7 +47,7 @@ func TestLoadProgramOK(t *testing.T) {
 
 func TestValidateP1NoModules(t *testing.T) {
 	p := Program{Modules: nil}
-	err := p.Validate()
+	err := p.validate()
 	want := "program.json: modules: at least one module required"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -57,7 +57,7 @@ func TestValidateP1NoModules(t *testing.T) {
 func TestValidateP2DuplicateModuleName(t *testing.T) {
 	p := validProgram()
 	p.Modules = append(p.Modules, p.Modules[0])
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: modules[1].name: duplicate module name "answer"`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -67,7 +67,7 @@ func TestValidateP2DuplicateModuleName(t *testing.T) {
 func TestValidateP3EmptyName(t *testing.T) {
 	p := validProgram()
 	p.Modules[0].Name = ""
-	err := p.Validate()
+	err := p.validate()
 	want := "program.json: modules[0].name: required"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -79,7 +79,7 @@ func TestValidateP4ToolMapKeyMismatch(t *testing.T) {
 	t1 := validTool()
 	t1.Name = "actually_different"
 	p.Tools = map[string]Tool{"fetch": t1}
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: tools["fetch"].name: map key "fetch" != name field "actually_different"`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -89,7 +89,7 @@ func TestValidateP4ToolMapKeyMismatch(t *testing.T) {
 func TestValidateP5UnknownTool(t *testing.T) {
 	p := validProgram()
 	p.Modules[0].Tools = []string{"missing"}
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: modules[0].tools[0]: unknown tool "missing"`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -101,7 +101,7 @@ func TestValidateP6BadKind(t *testing.T) {
 	t1 := validTool()
 	t1.Kind = "http"
 	p.Tools = map[string]Tool{"fetch": t1}
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: tools["fetch"].kind: only "external" supported in v0, got "http"`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -113,7 +113,7 @@ func TestValidateP7EmptyCommand(t *testing.T) {
 	t1 := validTool()
 	t1.Command = nil
 	p.Tools = map[string]Tool{"fetch": t1}
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: tools["fetch"].command: required, non-empty`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -123,7 +123,7 @@ func TestValidateP7EmptyCommand(t *testing.T) {
 func TestValidateP8NegativeMaxToolSteps(t *testing.T) {
 	p := validProgram()
 	p.Modules[0].MaxToolSteps = -1
-	err := p.Validate()
+	err := p.validate()
 	want := "program.json: modules[0].max_tool_steps: must be >= 0"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -133,7 +133,7 @@ func TestValidateP8NegativeMaxToolSteps(t *testing.T) {
 func TestValidateP9InputSchemaNotObject(t *testing.T) {
 	p := validProgram()
 	p.Modules[0].InputSchema = Schema{Kind: KindString}
-	err := p.Validate()
+	err := p.validate()
 	want := "program.json: modules[0].input_schema: top-level must be type=object"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -143,7 +143,7 @@ func TestValidateP9InputSchemaNotObject(t *testing.T) {
 func TestValidateP10OutputSchemaNotObject(t *testing.T) {
 	p := validProgram()
 	p.Modules[0].OutputSchema = Schema{Kind: KindString}
-	err := p.Validate()
+	err := p.validate()
 	want := "program.json: modules[0].output_schema: top-level must be type=object"
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -155,7 +155,7 @@ func TestValidateP11ToolInputNotObject(t *testing.T) {
 	t1 := validTool()
 	t1.InputSchema = Schema{Kind: KindString}
 	p.Tools = map[string]Tool{"fetch": t1}
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: tools["fetch"].input_schema: top-level must be type=object`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
@@ -167,7 +167,7 @@ func TestValidateP12ToolOutputNotObject(t *testing.T) {
 	t1 := validTool()
 	t1.OutputSchema = Schema{Kind: KindString}
 	p.Tools = map[string]Tool{"fetch": t1}
-	err := p.Validate()
+	err := p.validate()
 	want := `program.json: tools["fetch"].output_schema: top-level must be type=object`
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
