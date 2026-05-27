@@ -9,13 +9,13 @@ import (
 func TestParetoFrontierSingleCandidate(t *testing.T) {
 	state := stateWithScores([][]float64{{1, 0, 1}})
 
-	got, err := ParetoFrontier(state)
+	got, err := paretoFrontier(state)
 	if err != nil {
-		t.Fatalf("ParetoFrontier() unexpected error: %v", err)
+		t.Fatalf("paretoFrontier() unexpected error: %v", err)
 	}
 	want := []int{0}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ParetoFrontier() = %#v, want %#v", got, want)
+		t.Fatalf("paretoFrontier() = %#v, want %#v", got, want)
 	}
 }
 
@@ -26,13 +26,13 @@ func TestParetoFrontierExcludesDominatedCandidates(t *testing.T) {
 		{0, 1, 1},
 	})
 
-	got, err := ParetoFrontier(state)
+	got, err := paretoFrontier(state)
 	if err != nil {
-		t.Fatalf("ParetoFrontier() unexpected error: %v", err)
+		t.Fatalf("paretoFrontier() unexpected error: %v", err)
 	}
 	want := []int{0}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ParetoFrontier() = %#v, want %#v", got, want)
+		t.Fatalf("paretoFrontier() = %#v, want %#v", got, want)
 	}
 }
 
@@ -43,27 +43,27 @@ func TestParetoFrontierKeepsTradeoffsAndTies(t *testing.T) {
 		{1, 0},
 	})
 
-	got, err := ParetoFrontier(state)
+	got, err := paretoFrontier(state)
 	if err != nil {
-		t.Fatalf("ParetoFrontier() unexpected error: %v", err)
+		t.Fatalf("paretoFrontier() unexpected error: %v", err)
 	}
 	want := []int{0, 1, 2}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ParetoFrontier() = %#v, want %#v", got, want)
+		t.Fatalf("paretoFrontier() = %#v, want %#v", got, want)
 	}
 }
 
 func TestParetoFrontierRejectsMissingScoreRows(t *testing.T) {
-	state := State{
-		Candidates: []CandidateRecord{
-			{ID: 0, ParentIDs: []int{}, ProposalKind: ProposalSeed},
-			{ID: 1, ParentIDs: []int{0}, ProposalKind: ProposalReflection},
+	state := poolState{
+		Candidates: []candidateRecord{
+			{ID: 0, ParentIDs: []int{}, ProposalKind: proposalSeed},
+			{ID: 1, ParentIDs: []int{0}, ProposalKind: proposalReflection},
 		},
 		TrainScores: [][]float64{{1}},
 	}
 
-	if _, err := ParetoFrontier(state); err == nil {
-		t.Fatal("ParetoFrontier() error = nil, want missing score row error")
+	if _, err := paretoFrontier(state); err == nil {
+		t.Fatal("paretoFrontier() error = nil, want missing score row error")
 	}
 }
 
@@ -73,8 +73,8 @@ func TestParetoFrontierRejectsIncompleteScoreVectors(t *testing.T) {
 		{0},
 	})
 
-	if _, err := ParetoFrontier(state); err == nil {
-		t.Fatal("ParetoFrontier() error = nil, want incomplete score vector error")
+	if _, err := paretoFrontier(state); err == nil {
+		t.Fatal("paretoFrontier() error = nil, want incomplete score vector error")
 	}
 }
 
@@ -84,13 +84,13 @@ func TestParetoSelectorSamplesOnlyFromFrontierDeterministically(t *testing.T) {
 		{0, 0},
 		{0, 1},
 	})
-	selector := ParetoSelector{}
+	selector := paretoSelector{}
 	left := rand.New(rand.NewSource(42))
 	right := rand.New(rand.NewSource(42))
 
 	var leftSeq, rightSeq []int
 	for range 12 {
-		got, err := selector.SelectCandidate(state, left)
+		got, err := selector.selectCandidate(state, left)
 		if err != nil {
 			t.Fatalf("SelectCandidate() unexpected error: %v", err)
 		}
@@ -99,7 +99,7 @@ func TestParetoSelectorSamplesOnlyFromFrontierDeterministically(t *testing.T) {
 		}
 		leftSeq = append(leftSeq, got)
 
-		again, err := selector.SelectCandidate(state, right)
+		again, err := selector.selectCandidate(state, right)
 		if err != nil {
 			t.Fatalf("SelectCandidate() second rng unexpected error: %v", err)
 		}
@@ -111,14 +111,14 @@ func TestParetoSelectorSamplesOnlyFromFrontierDeterministically(t *testing.T) {
 	}
 }
 
-func stateWithScores(scores [][]float64) State {
-	candidates := make([]CandidateRecord, len(scores))
+func stateWithScores(scores [][]float64) poolState {
+	candidates := make([]candidateRecord, len(scores))
 	for i := range scores {
-		candidates[i] = CandidateRecord{
+		candidates[i] = candidateRecord{
 			ID:           i,
 			ParentIDs:    []int{},
-			ProposalKind: ProposalSeed,
+			ProposalKind: proposalSeed,
 		}
 	}
-	return State{Candidates: candidates, TrainScores: scores}
+	return poolState{Candidates: candidates, TrainScores: scores}
 }

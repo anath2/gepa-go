@@ -5,10 +5,10 @@ import (
 	"math/rand"
 )
 
-type ParetoSelector struct{}
+type paretoSelector struct{}
 
-func (ParetoSelector) SelectCandidate(state State, rng *rand.Rand) (int, error) {
-	frontier, err := ParetoFrontier(state)
+func (paretoSelector) selectCandidate(state poolState, rng *rand.Rand) (int, error) {
+	frontier, err := paretoFrontier(state)
 	if err != nil {
 		return 0, err
 	}
@@ -18,7 +18,7 @@ func (ParetoSelector) SelectCandidate(state State, rng *rand.Rand) (int, error) 
 	return frontier[rng.Intn(len(frontier))], nil
 }
 
-func ParetoFrontier(state State) ([]int, error) {
+func paretoFrontier(state poolState) ([]int, error) {
 	if len(state.Candidates) == 0 {
 		return nil, fmt.Errorf("pareto frontier: no candidates")
 	}
@@ -36,9 +36,6 @@ func ParetoFrontier(state State) ([]int, error) {
 		}
 	}
 
-	// Frontier calculation loop:
-	// For each candidate, check if it is dominated by any other candidate.
-	// If it is not dominated, add it to the frontier.
 	var frontier []int
 	for i := range state.Candidates {
 		dominated := false

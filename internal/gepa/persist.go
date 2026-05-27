@@ -8,8 +8,7 @@ import (
 	"path/filepath"
 )
 
-// RunArtifacts holds the canonical paths for engine artifacts under a run directory.
-type RunArtifacts struct {
+type runArtifacts struct {
 	RunDir        string
 	StatePath     string
 	EventsPath    string
@@ -17,9 +16,8 @@ type RunArtifacts struct {
 	ResultPath    string
 }
 
-// NewRunArtifacts derives standard artifact paths from a run directory.
-func NewRunArtifacts(runDir string) RunArtifacts {
-	return RunArtifacts{
+func newRunArtifacts(runDir string) runArtifacts {
+	return runArtifacts{
 		RunDir:        runDir,
 		StatePath:     filepath.Join(runDir, "state.json"),
 		EventsPath:    filepath.Join(runDir, "events.jsonl"),
@@ -28,8 +26,7 @@ func NewRunArtifacts(runDir string) RunArtifacts {
 	}
 }
 
-// EnsureRunDir ensures the run directory and candidates/ subdirectory exist.
-func EnsureRunDir(paths RunArtifacts) error {
+func ensureRunDir(paths runArtifacts) error {
 	if err := os.MkdirAll(paths.RunDir, 0o755); err != nil {
 		return fmt.Errorf("ensure run dir: %w", err)
 	}
@@ -39,13 +36,11 @@ func EnsureRunDir(paths RunArtifacts) error {
 	return nil
 }
 
-// WriteState rewrites state.json atomically.
-func WriteState(paths RunArtifacts, state State) error {
+func writeState(paths runArtifacts, state poolState) error {
 	return atomicWriteJSON(paths.StatePath, state)
 }
 
-// AppendEvent appends one JSON event per line to events.jsonl.
-func AppendEvent(paths RunArtifacts, event Event) error {
+func appendEvent(paths runArtifacts, event eventRecord) error {
 	if err := os.MkdirAll(filepath.Dir(paths.EventsPath), 0o755); err != nil {
 		return fmt.Errorf("append event: %w", err)
 	}
@@ -66,18 +61,15 @@ func AppendEvent(paths RunArtifacts, event Event) error {
 	return nil
 }
 
-// WriteCandidate writes a candidate record as candidates/NNNN.json (immutable).
-func WriteCandidate(paths RunArtifacts, id int, record CandidateRecord) error {
+func writeCandidate(paths runArtifacts, id int, record candidateRecord) error {
 	file := filepath.Join(paths.CandidatesDir, fmt.Sprintf("%04d.json", id))
 	return atomicWriteJSON(file, record)
 }
 
-// WriteResult writes result.json at the end of a run.
-func WriteResult(paths RunArtifacts, result Result) error {
+func writeResult(paths runArtifacts, result Result) error {
 	return atomicWriteJSON(paths.ResultPath, result)
 }
 
-// atomicWriteJSON writes JSON with indentation via write-temp + rename.
 func atomicWriteJSON(path string, v any) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -106,4 +98,3 @@ func atomicWriteJSON(path string, v any) error {
 	}
 	return nil
 }
-

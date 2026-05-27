@@ -9,10 +9,7 @@ import (
 	"github.com/anath2/gepa-go/internal/program"
 )
 
-var (
-	ErrOptimizeNotImplemented  = errors.New("gepa optimize loop not implemented")
-	ErrEvaluatorNotImplemented = errors.New("rollout evaluator not implemented")
-)
+var errEvaluatorNotImplemented = errors.New("rollout evaluator not implemented")
 
 type Options struct {
 	Program   program.Program
@@ -35,29 +32,29 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 
 	trainLen := len(opts.Train)
 	rng := newRNG(opts.Config.Seed)
-	state := NewState(opts.Program)
+	state := newPoolState(opts.Program)
 
 	seedResults, err := opts.Evaluator.Evaluate(ctx, state.Candidates[0].Prompts, opts.Train)
 	if err != nil {
 		return Result{}, err
 	}
-	if err := AddMetricCalls(&state, len(seedResults)); err != nil {
+	if err := addMetricCalls(&state, len(seedResults)); err != nil {
 		return Result{}, err
 	}
-	if err := SetSeedTrainScores(&state, trainLen, scores(seedResults)); err != nil {
+	if err := setSeedTrainScores(&state, trainLen, scores(seedResults)); err != nil {
 		return Result{}, err
 	}
 
 	minibatchSize := opts.Config.MinibatchSize
 	batchCost := minibatchCost(trainLen, minibatchSize)
-	selector := ParetoSelector{}
+	selector := paretoSelector{}
 
 	for iter := 0; ; iter++ {
 		if !hasBudget(state.MetricCalls, opts.Config.Budget, batchCost*2) {
 			break
 		}
 
-		parentID, err := selector.SelectCandidate(state, rng)
+		parentID, err := selector.selectCandidate(state, rng)
 		if err != nil {
 			return Result{}, err
 		}
@@ -78,7 +75,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if err := AddMetricCalls(&state, len(parentResults)); err != nil {
+		if err := addMetricCalls(&state, len(parentResults)); err != nil {
 			return Result{}, err
 		}
 		parentMean, err := meanScore(scores(parentResults))
@@ -95,7 +92,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			Results:      parentResults,
 		})
 		if err != nil {
-			BumpIteration(&state)
+			bumpIteration(&state)
 			continue
 		}
 
@@ -105,7 +102,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if err := AddMetricCalls(&state, len(proposalResults)); err != nil {
+		if err := addMetricCalls(&state, len(proposalResults)); err != nil {
 			return Result{}, err
 		}
 		proposalMean, err := meanScore(scores(proposalResults))
@@ -114,7 +111,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		}
 
 		if !strictlyImproves(parentMean, proposalMean) {
-			BumpIteration(&state)
+			bumpIteration(&state)
 			continue
 		}
 
@@ -126,12 +123,12 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if err := AddMetricCalls(&state, len(fullResults)); err != nil {
+		if err := addMetricCalls(&state, len(fullResults)); err != nil {
 			return Result{}, err
 		}
-		if _, err := AcceptCandidate(&state, trainLen, AcceptCandidateParams{
+		if _, err := acceptCandidate(&state, trainLen, acceptCandidateParams{
 			ParentIDs:     []int{parentID},
-			ProposalKind:  ProposalReflection,
+			ProposalKind:  proposalReflection,
 			MutatedModule: moduleName,
 			CreatedAtIter: iter + 1,
 			Prompts:       proposal,
@@ -139,7 +136,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		}); err != nil {
 			return Result{}, err
 		}
-		BumpIteration(&state)
+		bumpIteration(&state)
 	}
 
 	result := Result{
@@ -158,7 +155,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if err := AddMetricCalls(&state, len(valResults)); err != nil {
+		if err := addMetricCalls(&state, len(valResults)); err != nil {
 			return Result{}, err
 		}
 		valMean, err := meanScore(scores(valResults))
@@ -187,5 +184,5 @@ func withDefaults(opts Options) Options {
 type defaultEvaluator struct{}
 
 func (defaultEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
-	return nil, ErrEvaluatorNotImplemented
+	return nil, errEvaluatorNotImplemented
 }

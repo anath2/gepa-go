@@ -11,7 +11,7 @@ import (
 
 func TestNewRunArtifacts_StandardPaths(t *testing.T) {
 	runDir := filepath.Join("runs", "test-run")
-	paths := NewRunArtifacts(runDir)
+	paths := newRunArtifacts(runDir)
 
 	if paths.RunDir != runDir {
 		t.Fatalf("RunDir = %q, want %q", paths.RunDir, runDir)
@@ -31,9 +31,9 @@ func TestNewRunArtifacts_StandardPaths(t *testing.T) {
 }
 
 func TestEnsureRunDir_CreatesRunAndCandidatesDirs(t *testing.T) {
-	paths := NewRunArtifacts(filepath.Join(t.TempDir(), "run"))
-	if err := EnsureRunDir(paths); err != nil {
-		t.Fatalf("EnsureRunDir() unexpected error: %v", err)
+	paths := newRunArtifacts(filepath.Join(t.TempDir(), "run"))
+	if err := ensureRunDir(paths); err != nil {
+		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 	for _, dir := range []string{paths.RunDir, paths.CandidatesDir} {
 		info, err := os.Stat(dir)
@@ -47,49 +47,49 @@ func TestEnsureRunDir_CreatesRunAndCandidatesDirs(t *testing.T) {
 }
 
 func TestWriteState_WritesValidJSON(t *testing.T) {
-	paths := NewRunArtifacts(t.TempDir())
-	if err := EnsureRunDir(paths); err != nil {
-		t.Fatalf("EnsureRunDir() unexpected error: %v", err)
+	paths := newRunArtifacts(t.TempDir())
+	if err := ensureRunDir(paths); err != nil {
+		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 
-	want := State{
+	want := poolState{
 		Iteration:     2,
 		MetricCalls:   10,
 		BestCandidate: 0,
-		Candidates: []CandidateRecord{
-			{ID: 0, ParentIDs: []int{}, ProposalKind: ProposalSeed, Prompts: Candidate{"answer": "seed"}},
+		Candidates: []candidateRecord{
+			{ID: 0, ParentIDs: []int{}, ProposalKind: proposalSeed, Prompts: Candidate{"answer": "seed"}},
 		},
 		TrainScores: [][]float64{{0.5, 1}},
 	}
-	if err := WriteState(paths, want); err != nil {
-		t.Fatalf("WriteState() unexpected error: %v", err)
+	if err := writeState(paths, want); err != nil {
+		t.Fatalf("writeState() unexpected error: %v", err)
 	}
 
-	var got State
+	var got poolState
 	if err := readJSONFile(paths.StatePath, &got); err != nil {
 		t.Fatalf("read state.json: %v", err)
 	}
 	if got.Iteration != want.Iteration || got.MetricCalls != want.MetricCalls {
 		t.Fatalf("state = %#v, want iteration/metric_calls from %#v", got, want)
 	}
-	if len(got.Candidates) != 1 || got.Candidates[0].ProposalKind != ProposalSeed {
+	if len(got.Candidates) != 1 || got.Candidates[0].ProposalKind != proposalSeed {
 		t.Fatalf("candidates = %#v", got.Candidates)
 	}
 }
 
 func TestWriteState_OverwritesExisting(t *testing.T) {
-	paths := NewRunArtifacts(t.TempDir())
-	if err := EnsureRunDir(paths); err != nil {
-		t.Fatalf("EnsureRunDir() unexpected error: %v", err)
+	paths := newRunArtifacts(t.TempDir())
+	if err := ensureRunDir(paths); err != nil {
+		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
-	if err := WriteState(paths, State{Iteration: 1, MetricCalls: 1, BestCandidate: 0, Candidates: []CandidateRecord{{ID: 0}}, TrainScores: [][]float64{{0}}}); err != nil {
-		t.Fatalf("first WriteState() unexpected error: %v", err)
+	if err := writeState(paths, poolState{Iteration: 1, MetricCalls: 1, BestCandidate: 0, Candidates: []candidateRecord{{ID: 0}}, TrainScores: [][]float64{{0}}}); err != nil {
+		t.Fatalf("first writeState() unexpected error: %v", err)
 	}
-	if err := WriteState(paths, State{Iteration: 9, MetricCalls: 99, BestCandidate: 0, Candidates: []CandidateRecord{{ID: 0}}, TrainScores: [][]float64{{1}}}); err != nil {
-		t.Fatalf("second WriteState() unexpected error: %v", err)
+	if err := writeState(paths, poolState{Iteration: 9, MetricCalls: 99, BestCandidate: 0, Candidates: []candidateRecord{{ID: 0}}, TrainScores: [][]float64{{1}}}); err != nil {
+		t.Fatalf("second writeState() unexpected error: %v", err)
 	}
 
-	var got State
+	var got poolState
 	if err := readJSONFile(paths.StatePath, &got); err != nil {
 		t.Fatalf("read state.json: %v", err)
 	}
@@ -99,24 +99,24 @@ func TestWriteState_OverwritesExisting(t *testing.T) {
 }
 
 func TestAppendEvent_WritesOneJSONPerLine(t *testing.T) {
-	paths := NewRunArtifacts(t.TempDir())
+	paths := newRunArtifacts(t.TempDir())
 	accepted := true
 	parentMean := 0.25
 	proposalMean := 0.75
-	event := Event{
+	event := eventRecord{
 		Type:         "candidate_accepted",
 		Iteration:    1,
 		MetricCalls:  5,
 		CandidateID:  1,
 		ParentIDs:    []int{0},
-		ProposalKind: ProposalReflection,
+		ProposalKind: proposalReflection,
 		MutatedModule: "answer",
 		ParentMean:   &parentMean,
 		ProposalMean: &proposalMean,
 		Accepted:     &accepted,
 	}
-	if err := AppendEvent(paths, event); err != nil {
-		t.Fatalf("AppendEvent() unexpected error: %v", err)
+	if err := appendEvent(paths, event); err != nil {
+		t.Fatalf("appendEvent() unexpected error: %v", err)
 	}
 
 	lines, err := readJSONLLines(paths.EventsPath)
@@ -126,7 +126,7 @@ func TestAppendEvent_WritesOneJSONPerLine(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("got %d lines, want 1", len(lines))
 	}
-	var got Event
+	var got eventRecord
 	if err := json.Unmarshal([]byte(lines[0]), &got); err != nil {
 		t.Fatalf("unmarshal event: %v", err)
 	}
@@ -136,10 +136,10 @@ func TestAppendEvent_WritesOneJSONPerLine(t *testing.T) {
 }
 
 func TestAppendEvent_AppendsMultipleLines(t *testing.T) {
-	paths := NewRunArtifacts(t.TempDir())
+	paths := newRunArtifacts(t.TempDir())
 	for i, typ := range []string{"seed_evaluated", "proposal_evaluated", "candidate_rejected"} {
-		if err := AppendEvent(paths, Event{Type: typ, Iteration: i, MetricCalls: i + 1}); err != nil {
-			t.Fatalf("AppendEvent(%q) unexpected error: %v", typ, err)
+		if err := appendEvent(paths, eventRecord{Type: typ, Iteration: i, MetricCalls: i + 1}); err != nil {
+			t.Fatalf("appendEvent(%q) unexpected error: %v", typ, err)
 		}
 	}
 
@@ -158,21 +158,21 @@ func TestAppendEvent_AppendsMultipleLines(t *testing.T) {
 }
 
 func TestWriteCandidate_ZeroPaddedFilename(t *testing.T) {
-	paths := NewRunArtifacts(t.TempDir())
-	if err := EnsureRunDir(paths); err != nil {
-		t.Fatalf("EnsureRunDir() unexpected error: %v", err)
+	paths := newRunArtifacts(t.TempDir())
+	if err := ensureRunDir(paths); err != nil {
+		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 
-	record := CandidateRecord{
+	record := candidateRecord{
 		ID:            7,
 		ParentIDs:     []int{0},
-		ProposalKind:  ProposalReflection,
+		ProposalKind:  proposalReflection,
 		MutatedModule: "answer",
 		CreatedAtIter: 3,
 		Prompts:       Candidate{"answer": "v7"},
 	}
-	if err := WriteCandidate(paths, 7, record); err != nil {
-		t.Fatalf("WriteCandidate() unexpected error: %v", err)
+	if err := writeCandidate(paths, 7, record); err != nil {
+		t.Fatalf("writeCandidate() unexpected error: %v", err)
 	}
 
 	wantPath := filepath.Join(paths.CandidatesDir, "0007.json")
@@ -180,7 +180,7 @@ func TestWriteCandidate_ZeroPaddedFilename(t *testing.T) {
 		t.Fatalf("Stat(%q) error: %v", wantPath, err)
 	}
 
-	var got CandidateRecord
+	var got candidateRecord
 	if err := readJSONFile(wantPath, &got); err != nil {
 		t.Fatalf("read candidate: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestWriteCandidate_ZeroPaddedFilename(t *testing.T) {
 }
 
 func TestWriteResult_WritesValidJSON(t *testing.T) {
-	paths := NewRunArtifacts(t.TempDir())
+	paths := newRunArtifacts(t.TempDir())
 	valMean := 0.9
 	result := Result{
 		BestCandidate: 1,
@@ -198,8 +198,8 @@ func TestWriteResult_WritesValidJSON(t *testing.T) {
 		TrainMean:     0.8,
 		ValidationMean: &valMean,
 	}
-	if err := WriteResult(paths, result); err != nil {
-		t.Fatalf("WriteResult() unexpected error: %v", err)
+	if err := writeResult(paths, result); err != nil {
+		t.Fatalf("writeResult() unexpected error: %v", err)
 	}
 
 	var got Result

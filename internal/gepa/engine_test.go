@@ -52,8 +52,8 @@ func TestOptimizeStubInstallsDefaultsAndReturnsNotImplemented(t *testing.T) {
 	if err == nil {
 		t.Fatal("Optimize() error = nil, want not implemented")
 	}
-	if !errors.Is(err, ErrEvaluatorNotImplemented) {
-		t.Fatalf("Optimize() error = %v, want ErrEvaluatorNotImplemented", err)
+	if !errors.Is(err, errEvaluatorNotImplemented) {
+		t.Fatalf("Optimize() error = %v, want errEvaluatorNotImplemented", err)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestDefaultEvaluatorReturnsStableNotImplementedError(t *testing.T) {
 	if results != nil {
 		t.Fatalf("Evaluate() results = %#v, want nil", results)
 	}
-	if !errors.Is(err, ErrEvaluatorNotImplemented) {
-		t.Fatalf("Evaluate() error = %v, want ErrEvaluatorNotImplemented", err)
+	if !errors.Is(err, errEvaluatorNotImplemented) {
+		t.Fatalf("Evaluate() error = %v, want errEvaluatorNotImplemented", err)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestDefaultReflectorReturnsStableNotImplementedError(t *testing.T) {
 	if proposal != "" {
 		t.Fatalf("Propose() proposal = %q, want empty", proposal)
 	}
-	if !errors.Is(err, ErrReflectorNotImplemented) {
-		t.Fatalf("Propose() error = %v, want ErrReflectorNotImplemented", err)
+	if !errors.Is(err, errReflectorNotImplemented) {
+		t.Fatalf("Propose() error = %v, want errReflectorNotImplemented", err)
 	}
 }
 
