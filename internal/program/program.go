@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Program is the declarative description of the compound AI system being
@@ -83,6 +84,9 @@ func (p Program) validate() error {
 		// P3
 		if m.Name == "" {
 			return fmt.Errorf("%s: modules[%d].name: required", file, i)
+		}
+		if strings.TrimSpace(m.Prompt) == "" {
+			return fmt.Errorf("%s: modules[%d].prompt: required", file, i)
 		}
 		// P2
 		if seen[m.Name] {

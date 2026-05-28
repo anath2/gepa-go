@@ -74,6 +74,16 @@ func TestValidateP3EmptyName(t *testing.T) {
 	}
 }
 
+func TestValidateModulePromptRequired(t *testing.T) {
+	p := validProgram()
+	p.Modules[0].Prompt = ""
+	err := p.validate()
+	want := "program.json: modules[0].prompt: required"
+	if err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
+	}
+}
+
 func TestValidateP4ToolMapKeyMismatch(t *testing.T) {
 	p := validProgram()
 	t1 := validTool()
