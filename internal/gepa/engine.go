@@ -33,6 +33,10 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 	trainLen := len(opts.Train)
 	rng := newRNG(opts.Config.Seed)
 	state := newPoolState(opts.Program)
+	writer := newRunWriter(opts.RunDir)
+	if err := writer.init(); err != nil {
+		return Result{}, err
+	}
 
 	seedResults, err := opts.Evaluator.Evaluate(ctx, state.Candidates[0].Prompts, opts.Train)
 	if err != nil {
@@ -42,6 +46,9 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	if err := setSeedTrainScores(&state, trainLen, scores(seedResults)); err != nil {
+		return Result{}, err
+	}
+	if err := writer.persistSeed(state); err != nil {
 		return Result{}, err
 	}
 
@@ -83,6 +90,12 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 
+		reqEv := proposalEventContext(state, parentID, moduleName, batchIndices)
+		reqEv.Type = eventProposalRequested
+		if err := writer.appendRunEvent(reqEv); err != nil {
+			return Result{}, err
+		}
+
 		newInstruction, err := opts.Reflector.Propose(ctx, ReflectionRequest{
 			Candidate:    parentPrompts,
 			ParentID:     parentID,
@@ -92,6 +105,12 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			Results:      parentResults,
 		})
 		if err != nil {
+			failEv := proposalEventContext(state, parentID, moduleName, batchIndices)
+			failEv.Type = eventProposalFailed
+			failEv.Reason = err.Error()
+			if err := writer.appendRunEvent(failEv); err != nil {
+				return Result{}, err
+			}
 			bumpIteration(&state)
 			continue
 		}
@@ -110,7 +129,25 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 
+		evalEv := proposalEventContext(state, parentID, moduleName, batchIndices)
+		evalEv.Type = eventProposalEvaluated
+		evalEv.ParentMean = &parentMean
+		evalEv.ProposalMean = &proposalMean
+		if err := writer.appendRunEvent(evalEv); err != nil {
+			return Result{}, err
+		}
+
 		if !strictlyImproves(parentMean, proposalMean) {
+			rejected := false
+			rejEv := proposalEventContext(state, parentID, moduleName, batchIndices)
+			rejEv.Type = eventCandidateRejected
+			rejEv.ParentMean = &parentMean
+			rejEv.ProposalMean = &proposalMean
+			rejEv.Accepted = &rejected
+			rejEv.Reason = rejectReasonNoImprovement
+			if err := writer.appendRunEvent(rejEv); err != nil {
+				return Result{}, err
+			}
 			bumpIteration(&state)
 			continue
 		}
@@ -126,14 +163,18 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err := addMetricCalls(&state, len(fullResults)); err != nil {
 			return Result{}, err
 		}
-		if _, err := acceptCandidate(&state, trainLen, acceptCandidateParams{
+		newID, err := acceptCandidate(&state, trainLen, acceptCandidateParams{
 			ParentIDs:     []int{parentID},
 			ProposalKind:  proposalReflection,
 			MutatedModule: moduleName,
 			CreatedAtIter: iter + 1,
 			Prompts:       proposal,
 			TrainScores:   scores(fullResults),
-		}); err != nil {
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		if err := writer.persistAcceptedCandidate(state, newID, parentMean, proposalMean, parentID, moduleName, batchIndices); err != nil {
 			return Result{}, err
 		}
 		bumpIteration(&state)
@@ -166,6 +207,10 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		result.MetricCalls = state.MetricCalls
 	} else if len(opts.Val) > 0 {
 		result.ValidationSkipped = fmt.Sprintf("insufficient budget: need %d metric calls, have %d remaining", len(opts.Val), opts.Config.Budget-state.MetricCalls)
+	}
+
+	if err := writer.writeFinalResult(result); err != nil {
+		return Result{}, err
 	}
 
 	return result, nil

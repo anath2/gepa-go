@@ -2,8 +2,12 @@ package gepa
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/anath2/gepa-go/internal/config"
@@ -222,6 +226,180 @@ func TestOptimizeHandlesReflectionFailureWithoutNewCandidate(t *testing.T) {
 	}
 }
 
+func TestOptimizePersistsSeedAndResultWhenRunDirSet(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(len(train), 2, 8))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 0.5 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	result, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	assertFileExists(t, paths.StatePath)
+	assertFileExists(t, filepath.Join(paths.CandidatesDir, "0000.json"))
+	assertFileExists(t, paths.ResultPath)
+
+	var state poolState
+	if err := readJSONFile(paths.StatePath, &state); err != nil {
+		t.Fatalf("read state.json: %v", err)
+	}
+	if state.MetricCalls != len(train) || state.BestCandidate != 0 {
+		t.Fatalf("state = %#v, want seed-only pool", state)
+	}
+
+	var seed candidateRecord
+	if err := readJSONFile(filepath.Join(paths.CandidatesDir, "0000.json"), &seed); err != nil {
+		t.Fatalf("read candidates/0000.json: %v", err)
+	}
+	if seed.ProposalKind != proposalSeed || seed.Prompts["answer"] != "answer seed" {
+		t.Fatalf("seed record = %#v", seed)
+	}
+
+	events, err := readEvents(t, paths.EventsPath)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	if len(events) != 1 || events[0].Type != eventSeedEvaluated {
+		t.Fatalf("events = %#v, want single seed_evaluated", events)
+	}
+
+	var gotResult Result
+	if err := readJSONFile(paths.ResultPath, &gotResult); err != nil {
+		t.Fatalf("read result.json: %v", err)
+	}
+	if gotResult.BestCandidate != result.BestCandidate || gotResult.TrainMean != result.TrainMean {
+		t.Fatalf("result.json = %#v, want %#v", gotResult, result)
+	}
+}
+
+func TestOptimizePersistsAcceptedCandidate(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	trainLen := len(train)
+	opts := baseOpts(prog, train, engineConfig(20, 2, 9))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: trainLen,
+		scoreFor: func(c Candidate, examples []program.Example) float64 {
+			if len(examples) < trainLen {
+				if c["answer"] == "answer v2" {
+					return 1
+				}
+				return 0
+			}
+			if c["answer"] == "answer v2" {
+				return 1
+			}
+			return 0.25
+		},
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	assertFileExists(t, filepath.Join(paths.CandidatesDir, "0001.json"))
+
+	var accepted candidateRecord
+	if err := readJSONFile(filepath.Join(paths.CandidatesDir, "0001.json"), &accepted); err != nil {
+		t.Fatalf("read candidates/0001.json: %v", err)
+	}
+	if accepted.ProposalKind != proposalReflection || accepted.Prompts["answer"] != "answer v2" {
+		t.Fatalf("accepted record = %#v", accepted)
+	}
+
+	events, err := readEvents(t, paths.EventsPath)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	if !containsEventType(events, eventCandidateAccepted) {
+		t.Fatalf("events = %#v, want candidate_accepted", events)
+	}
+}
+
+func TestOptimizePersistsRejectedProposalEvent(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(20, 2, 10))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer seed"}
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	if _, err := os.Stat(filepath.Join(paths.CandidatesDir, "0001.json")); err == nil {
+		t.Fatal("candidates/0001.json exists, want only seed")
+	}
+
+	events, err := readEvents(t, paths.EventsPath)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	if !containsEventType(events, eventCandidateRejected) {
+		t.Fatalf("events = %#v, want candidate_rejected", events)
+	}
+}
+
+func TestOptimizePersistsProposalFailedEvent(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(20, 2, 11))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{err: errors.New("reflection failed")}
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	if _, err := os.Stat(filepath.Join(paths.CandidatesDir, "0001.json")); err == nil {
+		t.Fatal("candidates/0001.json exists, want only seed")
+	}
+
+	events, err := readEvents(t, paths.EventsPath)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	ev, ok := findEventType(events, eventProposalFailed)
+	if !ok {
+		t.Fatalf("events = %#v, want proposal_failed", events)
+	}
+	if ev.Reason != "reflection failed" {
+		t.Fatalf("proposal_failed reason = %q, want reflection failed", ev.Reason)
+	}
+}
+
 func TestOptimizeUsesRoundRobinModuleSelection(t *testing.T) {
 	prog := twoModuleProgram()
 	train := makeTrainExamples(4)
@@ -351,4 +529,82 @@ func (r *scriptedReflector) Propose(_ context.Context, req ReflectionRequest) (s
 		return "", r.err
 	}
 	return r.proposal, nil
+}
+
+func assertFileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Stat(%q) error: %v", path, err)
+	}
+}
+
+func readEvents(t *testing.T, path string) ([]eventRecord, error) {
+	t.Helper()
+	lines, err := readJSONLLines(path)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]eventRecord, 0, len(lines))
+	for _, line := range lines {
+		var ev eventRecord
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	return events, nil
+}
+
+func containsEventType(events []eventRecord, typ string) bool {
+	_, ok := findEventType(events, typ)
+	return ok
+}
+
+func findEventType(events []eventRecord, typ string) (eventRecord, bool) {
+	for _, ev := range events {
+		if ev.Type == typ {
+			return ev, true
+		}
+	}
+	return eventRecord{}, false
+}
+
+func TestOptimizeNoPersistenceWhenRunDirEmpty(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(3)
+	runParent := t.TempDir()
+	watchDir := filepath.Join(runParent, "should-not-be-created")
+	opts := baseOpts(prog, train, engineConfig(3, 1, 12))
+	opts.Val = nil
+	opts.RunDir = ""
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	if _, err := Optimize(context.Background(), opts); err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	if _, err := os.Stat(watchDir); !os.IsNotExist(err) {
+		if err == nil {
+			t.Fatalf("%q should not exist when RunDir is empty", watchDir)
+		}
+		t.Fatalf("Stat(%q) error = %v, want not exist", watchDir, err)
+	}
+	entries, err := os.ReadDir(runParent)
+	if err != nil {
+		t.Fatalf("ReadDir(%q): %v", runParent, err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("run parent has %d entries, want 0; names: %s", len(entries), dirNames(entries))
+	}
+}
+
+func dirNames(entries []os.DirEntry) string {
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name()
+	}
+	return strings.Join(names, ", ")
 }
