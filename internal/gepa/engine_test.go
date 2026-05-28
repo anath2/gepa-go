@@ -400,6 +400,59 @@ func TestOptimizePersistsProposalFailedEvent(t *testing.T) {
 	}
 }
 
+func TestOptimizeTreatsEmptyReflectionProposalAsProposalFailed(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(20, 2, 19))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "   "}
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	if _, err := os.Stat(filepath.Join(paths.CandidatesDir, "0001.json")); err == nil {
+		t.Fatal("candidates/0001.json exists, want only seed")
+	}
+
+	events, err := readEvents(t, paths.EventsPath)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	ev, ok := findEventType(events, eventProposalFailed)
+	if !ok {
+		t.Fatalf("events = %#v, want proposal_failed", events)
+	}
+	if ev.Reason != "empty reflected instruction" {
+		t.Fatalf("proposal_failed reason = %q, want empty reflected instruction", ev.Reason)
+	}
+}
+
+func TestOptimizeRejectsEvaluatorResultLengthMismatch(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(3)
+	opts := baseOpts(prog, train, engineConfig(20, 2, 21))
+	opts.Val = nil
+	opts.Evaluator = badLengthEvaluator{}
+	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
+
+	_, err := Optimize(context.Background(), opts)
+	if err == nil {
+		t.Fatal("Optimize() error = nil, want result length mismatch")
+	}
+	if !errors.Is(err, errEvaluatorResultLength) {
+		t.Fatalf("Optimize() error = %v, want errEvaluatorResultLength", err)
+	}
+}
+
 func TestOptimizeUsesRoundRobinModuleSelection(t *testing.T) {
 	prog := twoModuleProgram()
 	train := makeTrainExamples(4)
@@ -521,6 +574,12 @@ type scriptedReflector struct {
 	proposal string
 	err      error
 	modules  []string
+}
+
+type badLengthEvaluator struct{}
+
+func (badLengthEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
+	return []ExampleResult{{Score: 1, Feedback: "ok"}}, nil
 }
 
 func (r *scriptedReflector) Propose(_ context.Context, req ReflectionRequest) (string, error) {

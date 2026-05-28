@@ -38,14 +38,11 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	seedResults, err := opts.Evaluator.Evaluate(ctx, state.Candidates[0].Prompts, opts.Train)
+	seedEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, state.Candidates[0].Prompts, opts.Train)
 	if err != nil {
 		return Result{}, err
 	}
-	if err := addMetricCalls(&state, len(seedResults)); err != nil {
-		return Result{}, err
-	}
-	if err := setSeedTrainScores(&state, trainLen, scores(seedResults)); err != nil {
+	if err := setSeedTrainScores(&state, trainLen, seedEval.Scores); err != nil {
 		return Result{}, err
 	}
 	if err := writer.persistSeed(state); err != nil {
@@ -78,74 +75,46 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		batch := examplesAtIndices(opts.Train, batchIndices)
 
 		parentPrompts := state.Candidates[parentID].Prompts
-		parentResults, err := opts.Evaluator.Evaluate(ctx, parentPrompts, batch)
-		if err != nil {
-			return Result{}, err
-		}
-		if err := addMetricCalls(&state, len(parentResults)); err != nil {
-			return Result{}, err
-		}
-		parentMean, err := meanScore(scores(parentResults))
+		parentEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, parentPrompts, batch)
 		if err != nil {
 			return Result{}, err
 		}
 
-		reqEv := proposalEventContext(state, parentID, moduleName, batchIndices)
-		reqEv.Type = eventProposalRequested
-		if err := writer.appendRunEvent(reqEv); err != nil {
+		if err := writer.proposalRequested(state, parentID, moduleName, batchIndices); err != nil {
 			return Result{}, err
 		}
 
-		newInstruction, err := opts.Reflector.Propose(ctx, ReflectionRequest{
+		proposalOut, err := proposeReflection(ctx, opts.Reflector, ReflectionRequest{
 			Candidate:    parentPrompts,
 			ParentID:     parentID,
 			ModuleName:   moduleName,
 			BatchIndices: batchIndices,
 			Examples:     batch,
-			Results:      parentResults,
+			Results:      parentEval.Results,
 		})
 		if err != nil {
-			failEv := proposalEventContext(state, parentID, moduleName, batchIndices)
-			failEv.Type = eventProposalFailed
-			failEv.Reason = err.Error()
-			if err := writer.appendRunEvent(failEv); err != nil {
+			return Result{}, err
+		}
+		if proposalOut.Failed {
+			if err := writer.proposalFailed(state, parentID, moduleName, batchIndices, proposalOut.Reason); err != nil {
 				return Result{}, err
 			}
 			bumpIteration(&state)
 			continue
 		}
 
-		proposal := cloneCandidate(parentPrompts)
-		proposal[moduleName] = newInstruction
-		proposalResults, err := opts.Evaluator.Evaluate(ctx, proposal, batch)
-		if err != nil {
-			return Result{}, err
-		}
-		if err := addMetricCalls(&state, len(proposalResults)); err != nil {
-			return Result{}, err
-		}
-		proposalMean, err := meanScore(scores(proposalResults))
+		proposal := mutatedCandidate(parentPrompts, moduleName, proposalOut.Instruction)
+		proposalEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, proposal, batch)
 		if err != nil {
 			return Result{}, err
 		}
 
-		evalEv := proposalEventContext(state, parentID, moduleName, batchIndices)
-		evalEv.Type = eventProposalEvaluated
-		evalEv.ParentMean = &parentMean
-		evalEv.ProposalMean = &proposalMean
-		if err := writer.appendRunEvent(evalEv); err != nil {
+		if err := writer.proposalEvaluated(state, parentID, moduleName, batchIndices, parentEval.Mean, proposalEval.Mean); err != nil {
 			return Result{}, err
 		}
 
-		if !strictlyImproves(parentMean, proposalMean) {
-			rejected := false
-			rejEv := proposalEventContext(state, parentID, moduleName, batchIndices)
-			rejEv.Type = eventCandidateRejected
-			rejEv.ParentMean = &parentMean
-			rejEv.ProposalMean = &proposalMean
-			rejEv.Accepted = &rejected
-			rejEv.Reason = rejectReasonNoImprovement
-			if err := writer.appendRunEvent(rejEv); err != nil {
+		if !strictlyImproves(parentEval.Mean, proposalEval.Mean) {
+			if err := writer.proposalRejected(state, parentID, moduleName, batchIndices, parentEval.Mean, proposalEval.Mean); err != nil {
 				return Result{}, err
 			}
 			bumpIteration(&state)
@@ -156,11 +125,8 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			break
 		}
 
-		fullResults, err := opts.Evaluator.Evaluate(ctx, proposal, opts.Train)
+		fullEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, proposal, opts.Train)
 		if err != nil {
-			return Result{}, err
-		}
-		if err := addMetricCalls(&state, len(fullResults)); err != nil {
 			return Result{}, err
 		}
 		newID, err := acceptCandidate(&state, trainLen, acceptCandidateParams{
@@ -169,12 +135,12 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			MutatedModule: moduleName,
 			CreatedAtIter: iter + 1,
 			Prompts:       proposal,
-			TrainScores:   scores(fullResults),
+			TrainScores:   fullEval.Scores,
 		})
 		if err != nil {
 			return Result{}, err
 		}
-		if err := writer.persistAcceptedCandidate(state, newID, parentMean, proposalMean, parentID, moduleName, batchIndices); err != nil {
+		if err := writer.persistAcceptedCandidate(state, newID, parentEval.Mean, proposalEval.Mean, parentID, moduleName, batchIndices); err != nil {
 			return Result{}, err
 		}
 		bumpIteration(&state)
@@ -192,18 +158,11 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 
 	if len(opts.Val) > 0 && hasBudget(state.MetricCalls, opts.Config.Budget, len(opts.Val)) {
 		bestPrompts := state.Candidates[state.BestCandidate].Prompts
-		valResults, err := opts.Evaluator.Evaluate(ctx, bestPrompts, opts.Val)
+		valEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, bestPrompts, opts.Val)
 		if err != nil {
 			return Result{}, err
 		}
-		if err := addMetricCalls(&state, len(valResults)); err != nil {
-			return Result{}, err
-		}
-		valMean, err := meanScore(scores(valResults))
-		if err != nil {
-			return Result{}, err
-		}
-		result.ValidationMean = &valMean
+		result.ValidationMean = &valEval.Mean
 		result.MetricCalls = state.MetricCalls
 	} else if len(opts.Val) > 0 {
 		result.ValidationSkipped = fmt.Sprintf("insufficient budget: need %d metric calls, have %d remaining", len(opts.Val), opts.Config.Budget-state.MetricCalls)

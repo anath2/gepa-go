@@ -222,6 +222,88 @@ func readJSONFile(path string, v any) error {
 	return json.Unmarshal(data, v)
 }
 
+func TestRunWriter_ProposalEvents(t *testing.T) {
+	runDir := t.TempDir()
+	writer := newRunWriter(runDir)
+	if err := writer.init(); err != nil {
+		t.Fatalf("init() unexpected error: %v", err)
+	}
+
+	state := poolState{
+		Iteration:   1,
+		MetricCalls: 5,
+		Candidates:  []candidateRecord{{ID: 0}},
+		TrainScores: [][]float64{{1}},
+	}
+	parentID := 0
+	moduleName := "answer"
+	batchIndices := []int{0, 2}
+	parentMean := 0.25
+	proposalMean := 0.75
+
+	if err := writer.proposalRequested(state, parentID, moduleName, batchIndices); err != nil {
+		t.Fatalf("proposalRequested() unexpected error: %v", err)
+	}
+	if err := writer.proposalFailed(state, parentID, moduleName, batchIndices, "reflection failed"); err != nil {
+		t.Fatalf("proposalFailed() unexpected error: %v", err)
+	}
+	if err := writer.proposalEvaluated(state, parentID, moduleName, batchIndices, parentMean, proposalMean); err != nil {
+		t.Fatalf("proposalEvaluated() unexpected error: %v", err)
+	}
+	if err := writer.proposalRejected(state, parentID, moduleName, batchIndices, parentMean, proposalMean); err != nil {
+		t.Fatalf("proposalRejected() unexpected error: %v", err)
+	}
+
+	events, err := readEventsFromPath(t, newRunArtifacts(runDir).EventsPath)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	wantTypes := []string{
+		eventProposalRequested,
+		eventProposalFailed,
+		eventProposalEvaluated,
+		eventCandidateRejected,
+	}
+	if len(events) != len(wantTypes) {
+		t.Fatalf("got %d events, want %d", len(events), len(wantTypes))
+	}
+	for i, typ := range wantTypes {
+		if events[i].Type != typ {
+			t.Fatalf("events[%d].Type = %q, want %q", i, events[i].Type, typ)
+		}
+	}
+	if events[1].Reason != "reflection failed" {
+		t.Fatalf("proposal_failed reason = %q, want reflection failed", events[1].Reason)
+	}
+	if events[3].Reason != rejectReasonNoImprovement {
+		t.Fatalf("candidate_rejected reason = %q, want %q", events[3].Reason, rejectReasonNoImprovement)
+	}
+	rejected := false
+	if events[3].Accepted == nil || *events[3].Accepted != rejected {
+		t.Fatalf("candidate_rejected accepted = %v, want false", events[3].Accepted)
+	}
+	if events[2].ParentMean == nil || *events[2].ParentMean != parentMean {
+		t.Fatalf("proposal_evaluated parent_mean = %v, want %v", events[2].ParentMean, parentMean)
+	}
+}
+
+func readEventsFromPath(t *testing.T, path string) ([]eventRecord, error) {
+	t.Helper()
+	lines, err := readJSONLLines(path)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]eventRecord, 0, len(lines))
+	for _, line := range lines {
+		var ev eventRecord
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	return events, nil
+}
+
 func readJSONLLines(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -92,6 +92,38 @@ func (w runWriter) persistAcceptedCandidate(state poolState, id int, parentMean,
 	return w.appendRunEvent(ev)
 }
 
+func (w runWriter) proposalRequested(state poolState, parentID int, moduleName string, batchIndices []int) error {
+	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
+	ev.Type = eventProposalRequested
+	return w.appendRunEvent(ev)
+}
+
+func (w runWriter) proposalFailed(state poolState, parentID int, moduleName string, batchIndices []int, reason string) error {
+	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
+	ev.Type = eventProposalFailed
+	ev.Reason = reason
+	return w.appendRunEvent(ev)
+}
+
+func (w runWriter) proposalEvaluated(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {
+	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
+	ev.Type = eventProposalEvaluated
+	ev.ParentMean = &parentMean
+	ev.ProposalMean = &proposalMean
+	return w.appendRunEvent(ev)
+}
+
+func (w runWriter) proposalRejected(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {
+	rejected := false
+	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
+	ev.Type = eventCandidateRejected
+	ev.ParentMean = &parentMean
+	ev.ProposalMean = &proposalMean
+	ev.Accepted = &rejected
+	ev.Reason = rejectReasonNoImprovement
+	return w.appendRunEvent(ev)
+}
+
 // appendRunEvent appends when RunDir was set; callers use package appendEvent(paths, ...)
 // directly for tests and other low-level persistence.
 func (w runWriter) appendRunEvent(event eventRecord) error {
