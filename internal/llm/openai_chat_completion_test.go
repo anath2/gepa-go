@@ -11,19 +11,33 @@ import (
 )
 
 func TestNewClientRequiresAPIKey(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("API_KEY", "")
+	t.Setenv("BASE_URL", "https://example.com/v1")
 
 	_, err := NewClient()
 	if err == nil {
 		t.Fatal("NewClient() error = nil, want missing API key error")
 	}
-	if !strings.Contains(err.Error(), "OPENROUTER_API_KEY") {
-		t.Fatalf("NewClient() error = %v, want OPENROUTER_API_KEY mention", err)
+	if !strings.Contains(err.Error(), "API_KEY") {
+		t.Fatalf("NewClient() error = %v, want API_KEY mention", err)
+	}
+}
+
+func TestNewClientRequiresBaseURL(t *testing.T) {
+	t.Setenv("API_KEY", "test-key")
+	t.Setenv("BASE_URL", "")
+
+	_, err := NewClient()
+	if err == nil {
+		t.Fatal("NewClient() error = nil, want missing base URL error")
+	}
+	if !strings.Contains(err.Error(), "BASE_URL") {
+		t.Fatalf("NewClient() error = %v, want BASE_URL mention", err)
 	}
 }
 
 func TestChatReturnsDecodedResponse(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("API_KEY", "test-key")
 
 	var gotReq ChatRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +104,7 @@ func TestChatReturnsDecodedResponse(t *testing.T) {
 }
 
 func TestGenerateReturnsFirstChoiceContent(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("API_KEY", "test-key")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -121,7 +135,7 @@ func TestGenerateReturnsFirstChoiceContent(t *testing.T) {
 }
 
 func TestChatSurfacesNon2xxBody(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("API_KEY", "test-key")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid model", http.StatusBadRequest)
@@ -149,7 +163,7 @@ func TestChatSurfacesNon2xxBody(t *testing.T) {
 }
 
 func TestGenerateRejectsEmptyChoices(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("API_KEY", "test-key")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -171,15 +185,15 @@ func TestGenerateRejectsEmptyChoices(t *testing.T) {
 	}
 }
 
-func TestNewClientUsesOPENROUTERBaseURLEnv(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "test-key")
+func TestNewClientUsesBaseURLEnv(t *testing.T) {
+	t.Setenv("API_KEY", "test-key")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("OPENROUTER_BASE_URL", srv.URL)
+	t.Setenv("BASE_URL", srv.URL)
 
 	client, err := NewClient(WithHTTPClient(srv.Client()))
 	if err != nil {

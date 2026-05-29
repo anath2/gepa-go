@@ -8,7 +8,7 @@ coverage.out
 # Run artifacts produced by `gepa optimize`
 /runs/
 
-# Local OpenRouter credentials
+# Local LLM provider credentials
 .env
 .env.*
 !.env.example

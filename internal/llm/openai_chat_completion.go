@@ -12,11 +12,12 @@ import (
 	"strings"
 )
 
-const defaultBaseURL = "https://openrouter.ai/api/v1"
+var (
+	errMissingAPIKey  = errors.New("llm: API_KEY is not set")
+	errMissingBaseURL = errors.New("llm: BASE_URL is not set")
+)
 
-var errMissingAPIKey = errors.New("OPENROUTER_API_KEY is not set")
-
-// Client calls an OpenAI-compatible /chat/completions endpoint (OpenRouter, Fireworks, Together, etc.).
+// Client calls an OpenAI-compatible /chat/completions endpoint.
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
@@ -38,15 +39,12 @@ func WithHTTPClient(httpClient *http.Client) Option {
 }
 
 func NewClient(opts ...Option) (*Client, error) {
-	apiKey := strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	apiKey := strings.TrimSpace(os.Getenv("API_KEY"))
 	if apiKey == "" {
 		return nil, errMissingAPIKey
 	}
 
-	baseURL := defaultBaseURL
-	if v := strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")); v != "" {
-		baseURL = v
-	}
+	baseURL := strings.TrimSpace(os.Getenv("BASE_URL"))
 
 	client := &Client{
 		httpClient: http.DefaultClient,
@@ -55,6 +53,9 @@ func NewClient(opts ...Option) (*Client, error) {
 	}
 	for _, opt := range opts {
 		opt(client)
+	}
+	if strings.TrimSpace(client.baseURL) == "" {
+		return nil, errMissingBaseURL
 	}
 	return client, nil
 }
