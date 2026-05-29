@@ -29,7 +29,8 @@ type Evaluator interface {
 
 func Optimize(ctx context.Context, opts Options) (Result, error) {
 	opts = withDefaults(opts)
-
+	
+	// Initialize the candidate pool P with the seed program and run-artifact writer (Alg. 1, line 2).
 	trainLen := len(opts.Train)
 	rng := newRNG(opts.Config.Seed)
 	state := newPoolState(opts.Program)
@@ -38,6 +39,8 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// Seed candidate scored over the full train set (Alg. 1, lines 3-5).
+	// In v0, D_feedback and D_pareto are both train.jsonl, so opts.Train serves both roles.
 	seedEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, state.Candidates[0].Prompts, opts.Train)
 	if err != nil {
 		return Result{}, err
@@ -53,37 +56,44 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 	batchCost := minibatchCost(trainLen, minibatchSize)
 	selector := paretoSelector{}
 
+	// Main budget loop (Alg. 1, line 6).
 	for iter := 0; ; iter++ {
 		if !hasBudget(state.MetricCalls, opts.Config.Budget, batchCost*2) {
 			break
 		}
 
+		// Select parent from the Pareto frontier (Alg. 1, line 7; Alg. 2).
 		parentID, err := selector.selectCandidate(state, rng)
 		if err != nil {
 			return Result{}, err
 		}
 
+		// Select module to mutate (Alg. 1, line 8); round-robin picker in v0.
 		moduleName, err := moduleNameAtIteration(opts.Program, iter)
 		if err != nil {
 			return Result{}, err
 		}
 
+		// Sample minibatch M from D_feedback (Alg. 1, line 9).
 		batchIndices, err := sampleMinibatch(rng, trainLen, minibatchSize)
 		if err != nil {
 			return Result{}, err
 		}
 		batch := examplesAtIndices(opts.Train, batchIndices)
 
+		// Score parent on the minibatch: sigma, the "before" score (Alg. 1, line 13).
 		parentPrompts := state.Candidates[parentID].Prompts
 		parentEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, parentPrompts, batch)
 		if err != nil {
 			return Result{}, err
 		}
 
+		// Record the proposal-requested event for the run log (not part of Alg. 1).
 		if err := writer.proposalRequested(state, parentID, moduleName, batchIndices); err != nil {
 			return Result{}, err
 		}
 
+		// Reflectively update the module prompt from feedback + traces (Alg. 1, lines 10-12).
 		proposalOut, err := proposeReflection(ctx, opts.Reflector, ReflectionRequest{
 			Candidate:    parentPrompts,
 			ParentID:     parentID,
@@ -103,6 +113,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			continue
 		}
 
+		// Score the proposal on the same minibatch: sigma', the "after" score (Alg. 1, line 13).
 		proposal := mutatedCandidate(parentPrompts, moduleName, proposalOut.Instruction)
 		proposalEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, proposal, batch)
 		if err != nil {
@@ -113,6 +124,8 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 
+		// Acceptance gate: keep the proposal only if sigma' > sigma on the minibatch (Alg. 1, line 14).
+		// This is the only acceptance test; the full-train eval below does not gate.
 		if !strictlyImproves(parentEval.Mean, proposalEval.Mean) {
 			if err := writer.proposalRejected(state, parentID, moduleName, batchIndices, parentEval.Mean, proposalEval.Mean); err != nil {
 				return Result{}, err
@@ -125,10 +138,14 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			break
 		}
 
+		// Proposal already passed the minibatch gate; this full D_pareto pass is
+		// unconditional and only produces per-example scores for the Pareto frontier (Alg. 1, lines 16-18).
 		fullEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, proposal, opts.Train)
 		if err != nil {
 			return Result{}, err
 		}
+
+		// Add proposal to the pool with ancestry (Alg. 1, line 15).
 		newID, err := acceptCandidate(&state, trainLen, acceptCandidateParams{
 			ParentIDs:     []int{parentID},
 			ProposalKind:  proposalReflection,
@@ -146,6 +163,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		bumpIteration(&state)
 	}
 
+	// Return the candidate with the best aggregate train/D_pareto score (Alg. 1, line 21).
 	result := Result{
 		BestCandidate: state.BestCandidate,
 		MetricCalls:   state.MetricCalls,
@@ -155,7 +173,9 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	result.TrainMean = trainMean
-
+	
+	// Final score of the best candidate on the held-out set (paper's test set, not part of
+	// Alg. 1); reported only, never used for selection, which relies on the train/D_pareto scores above.
 	if len(opts.Val) > 0 && hasBudget(state.MetricCalls, opts.Config.Budget, len(opts.Val)) {
 		bestPrompts := state.Candidates[state.BestCandidate].Prompts
 		valEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, bestPrompts, opts.Val)
