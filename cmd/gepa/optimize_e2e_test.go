@@ -8,8 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anath2/gepa-go/internal/config"
-	"github.com/anath2/gepa-go/internal/program"
+	"github.com/anath2/gepa-go/internal/gepa"
 )
 
 var runE2E = flag.Bool("run-e2e", false, "run high-latency end-to-end tests")
@@ -25,7 +24,7 @@ func TestOptimizeChineseNERProblemDefinitionE2E(t *testing.T) {
 	trainPath := filepath.Join(fixtureDir, "train.jsonl")
 	valPath := filepath.Join(fixtureDir, "val.jsonl")
 
-	validateChineseNERE2EConfig(t, programPath, configPath)
+	validateChineseNERE2EConfig(t, programPath, configPath, trainPath, valPath)
 
 	out, _, err := runCmd(t, "optimize",
 		"--program", programPath,
@@ -50,31 +49,19 @@ func TestOptimizeChineseNERProblemDefinitionE2E(t *testing.T) {
 	}
 }
 
-func validateChineseNERE2EConfig(t *testing.T, programPath, configPath string) {
+func validateChineseNERE2EConfig(t *testing.T, programPath, configPath, trainPath, valPath string) {
 	t.Helper()
 
-	fmt.Fprintf(os.Stdout, "e2e validation: loading program %s\n", programPath)
-	prog, err := program.Load(programPath)
+	fmt.Fprintf(os.Stdout, "e2e validation: loading problem from %s\n", programPath)
+	problem, err := gepa.LoadProblem(gepa.ProblemPaths{
+		Program: programPath,
+		Config:  configPath,
+		Train:   trainPath,
+		Val:     valPath,
+	})
 	if err != nil {
-		t.Fatalf("program validation failed: %v", err)
+		t.Fatalf("problem validation failed: %v", err)
 	}
-	fmt.Fprintf(os.Stdout, "e2e validation: program ok (%d modules, %d tools)\n", len(prog.Modules), len(prog.Tools))
-
-	fmt.Fprintf(os.Stdout, "e2e validation: loading config %s\n", configPath)
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		t.Fatalf("config validation failed: %v", err)
-	}
-	fmt.Fprintf(os.Stdout, "e2e validation: config ok (budget=%d minibatch=%d seed=%d)\n", cfg.Budget, cfg.MinibatchSize, cfg.Seed)
-
-	fmt.Fprintln(os.Stdout, "e2e validation: checking config metric against program output schema")
-	if err := cfg.ValidateAgainstProgram(prog); err != nil {
-		t.Fatalf("config/program validation failed: %v", err)
-	}
-
-	fmt.Fprintln(os.Stdout, "e2e validation: checking program accumulating-state inputs")
-	if err := prog.ValidateAgainstDatasetInputSchema(prog.Modules[0].InputSchema); err != nil {
-		t.Fatalf("program state validation failed: %v", err)
-	}
-	fmt.Fprintln(os.Stdout, "e2e validation: program and config validation complete")
+	fmt.Fprintf(os.Stdout, "e2e validation: problem ok (%d modules, %d tools, train=%d val=%d)\n",
+		len(problem.Program.Modules), len(problem.Program.Tools), len(problem.Train), len(problem.Val))
 }

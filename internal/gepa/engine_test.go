@@ -21,10 +21,12 @@ func TestOptionsHoldsInputsAndDependencies(t *testing.T) {
 	val := []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}}
 
 	opts := Options{
-		Program:   prog,
-		Config:    cfg,
-		Train:     train,
-		Val:       val,
+		Problem: Problem{
+			Program: prog,
+			Config:  cfg,
+			Train:   train,
+			Val:     val,
+		},
 		RunDir:    "runs/test",
 		LogTraces: true,
 		Evaluator: fakeEvaluator{},
@@ -45,32 +47,69 @@ func TestOptionsHoldsInputsAndDependencies(t *testing.T) {
 	}
 }
 
-func TestOptimizeStubInstallsDefaultsAndReturnsNotImplemented(t *testing.T) {
+func TestOptimizeRejectsMissingEvaluator(t *testing.T) {
 	opts := Options{
-		Program: program.Program{Modules: []program.Module{{Name: "answer", Prompt: "answer"}}},
-		Config:  engineConfig(10, 3, 7),
-		Train:   []program.Example{{Input: map[string]any{"question": "q"}, Expected: map[string]any{"answer": "a"}}},
+		Problem: Problem{
+			Program: program.Program{Modules: []program.Module{{Name: "answer", Prompt: "answer"}}},
+			Config:  engineConfig(10, 3, 7),
+			Train:   []program.Example{{Input: map[string]any{"question": "q"}, Expected: map[string]any{"answer": "a"}}},
+		},
 	}
 
 	_, err := Optimize(context.Background(), opts)
 	if err == nil {
-		t.Fatal("Optimize() error = nil, want not implemented")
+		t.Fatal("Optimize() error = nil, want invalid options")
 	}
-	if !errors.Is(err, errEvaluatorNotImplemented) {
-		t.Fatalf("Optimize() error = %v, want errEvaluatorNotImplemented", err)
+	if !errors.Is(err, errInvalidOptions) {
+		t.Fatalf("Optimize() error = %v, want errInvalidOptions", err)
 	}
 }
 
-func TestDefaultEvaluatorReturnsStableNotImplementedError(t *testing.T) {
-	results, err := defaultEvaluator{}.Evaluate(context.Background(), Candidate{"answer": "prompt"}, nil)
+func TestOptimizeRejectsEmptyTrain(t *testing.T) {
+	opts := baseOpts(singleModuleProgram(), nil, engineConfig(10, 3, 1))
+
+	_, err := Optimize(context.Background(), opts)
 	if err == nil {
-		t.Fatal("Evaluate() error = nil, want not implemented")
+		t.Fatal("Optimize() error = nil, want invalid options")
 	}
-	if results != nil {
-		t.Fatalf("Evaluate() results = %#v, want nil", results)
+	if !errors.Is(err, errInvalidOptions) {
+		t.Fatalf("Optimize() error = %v, want errInvalidOptions", err)
 	}
-	if !errors.Is(err, errEvaluatorNotImplemented) {
-		t.Fatalf("Evaluate() error = %v, want errEvaluatorNotImplemented", err)
+}
+
+func TestOptimizeRejectsProgramWithNoModules(t *testing.T) {
+	opts := baseOpts(program.Program{}, makeTrainExamples(1), engineConfig(10, 3, 1))
+
+	_, err := Optimize(context.Background(), opts)
+	if err == nil {
+		t.Fatal("Optimize() error = nil, want invalid options")
+	}
+	if !errors.Is(err, errInvalidOptions) {
+		t.Fatalf("Optimize() error = %v, want errInvalidOptions", err)
+	}
+}
+
+func TestOptimizeRejectsNonPositiveBudget(t *testing.T) {
+	opts := baseOpts(singleModuleProgram(), makeTrainExamples(1), engineConfig(0, 3, 1))
+
+	_, err := Optimize(context.Background(), opts)
+	if err == nil {
+		t.Fatal("Optimize() error = nil, want invalid options")
+	}
+	if !errors.Is(err, errInvalidOptions) {
+		t.Fatalf("Optimize() error = %v, want errInvalidOptions", err)
+	}
+}
+
+func TestOptimizeRejectsNonPositiveMinibatchSize(t *testing.T) {
+	opts := baseOpts(singleModuleProgram(), makeTrainExamples(1), engineConfig(10, 0, 1))
+
+	_, err := Optimize(context.Background(), opts)
+	if err == nil {
+		t.Fatal("Optimize() error = nil, want invalid options")
+	}
+	if !errors.Is(err, errInvalidOptions) {
+		t.Fatalf("Optimize() error = %v, want errInvalidOptions", err)
 	}
 }
 
@@ -508,10 +547,12 @@ func engineConfig(budget, minibatch int, seed int64) config.Config {
 
 func baseOpts(prog program.Program, train []program.Example, cfg config.Config) Options {
 	return Options{
-		Program: prog,
-		Config:  cfg,
-		Train:   train,
-		Val:     []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}},
+		Problem: Problem{
+			Program: prog,
+			Config:  cfg,
+			Train:   train,
+			Val:     []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}},
+		},
 	}
 }
 

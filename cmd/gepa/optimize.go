@@ -8,8 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/anath2/gepa-go/internal/config"
-	"github.com/anath2/gepa-go/internal/program"
+	"github.com/anath2/gepa-go/internal/gepa"
 )
 
 type optimizeFlags struct {
@@ -93,36 +92,24 @@ func newOptimizeCmd() *cobra.Command {
 				return nil
 			}
 
-			prog, err := program.Load(f.program)
+			problem, err := gepa.LoadProblem(gepa.ProblemPaths{
+				Program: f.program,
+				Config:  f.config,
+				Train:   f.train,
+				Val:     f.val,
+			})
 			if err != nil {
 				return err
 			}
-			cfg, err := config.Load(f.config)
-			if err != nil {
-				return err
-			}
-			if err := cfg.ValidateAgainstProgram(prog); err != nil {
-				return err
-			}
-			if err := prog.ValidateAgainstDatasetInputSchema(prog.Modules[0].InputSchema); err != nil {
-				return err
-			}
-			train, err := program.LoadDataset(f.train, prog.Modules[0].InputSchema, cfg.Metric.Field)
-			if err != nil {
-				return err
-			}
-			val, err := program.LoadDataset(f.val, prog.Modules[0].InputSchema, cfg.Metric.Field)
-			if err != nil {
-				return err
-			}
+			_ = gepa.Options{Problem: problem, LogTraces: f.logTraces}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "program:  %d modules, %d tools\n", len(prog.Modules), len(prog.Tools))
-			fmt.Fprintf(out, "config:   budget=%d minibatch=%d seed=%d\n", cfg.Budget, cfg.MinibatchSize, cfg.Seed)
-			fmt.Fprintf(out, "models:   task=%s  reflection=%s\n", cfg.TaskModel, cfg.ReflectionModel)
-			fmt.Fprintf(out, "metric:   %s on %q\n", cfg.Metric.Kind, cfg.Metric.Field)
-			fmt.Fprintf(out, "train:    %d examples\n", len(train))
-			fmt.Fprintf(out, "val:      %d examples\n", len(val))
+			fmt.Fprintf(out, "program:  %d modules, %d tools\n", len(problem.Program.Modules), len(problem.Program.Tools))
+			fmt.Fprintf(out, "config:   budget=%d minibatch=%d seed=%d\n", problem.Config.Budget, problem.Config.MinibatchSize, problem.Config.Seed)
+			fmt.Fprintf(out, "models:   task=%s  reflection=%s\n", problem.Config.TaskModel, problem.Config.ReflectionModel)
+			fmt.Fprintf(out, "metric:   %s on %q\n", problem.Config.Metric.Kind, problem.Config.Metric.Field)
+			fmt.Fprintf(out, "train:    %d examples\n", len(problem.Train))
+			fmt.Fprintf(out, "val:      %d examples\n", len(problem.Val))
 			return nil
 		},
 	}

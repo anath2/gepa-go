@@ -5,17 +5,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/anath2/gepa-go/internal/config"
 	"github.com/anath2/gepa-go/internal/program"
 )
 
-var errEvaluatorNotImplemented = errors.New("rollout evaluator not implemented")
+var errInvalidOptions = errors.New("gepa options: invalid")
 
 type Options struct {
-	Program   program.Program
-	Config    config.Config
-	Train     []program.Example
-	Val       []program.Example
+	Problem
+
 	RunDir    string
 	LogTraces bool
 
@@ -29,7 +26,10 @@ type Evaluator interface {
 
 func Optimize(ctx context.Context, opts Options) (Result, error) {
 	opts = withDefaults(opts)
-	
+	if err := validateOpts(opts); err != nil {
+		return Result{}, err
+	}
+
 	// Initialize the candidate pool P with the seed program and run-artifact writer (Alg. 1, line 2).
 	trainLen := len(opts.Train)
 	rng := newRNG(opts.Config.Seed)
@@ -196,17 +196,27 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 }
 
 func withDefaults(opts Options) Options {
-	if opts.Evaluator == nil {
-		opts.Evaluator = defaultEvaluator{}
-	}
 	if opts.Reflector == nil {
 		opts.Reflector = defaultReflector{}
 	}
 	return opts
 }
 
-type defaultEvaluator struct{}
-
-func (defaultEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
-	return nil, errEvaluatorNotImplemented
+func validateOpts(opts Options) error {
+	if opts.Evaluator == nil {
+		return fmt.Errorf("validate options: evaluator is required: %w", errInvalidOptions)
+	}
+	if len(opts.Program.Modules) == 0 {
+		return fmt.Errorf("validate options: program has no modules: %w", errInvalidOptions)
+	}
+	if len(opts.Train) == 0 {
+		return fmt.Errorf("validate options: train set is empty: %w", errInvalidOptions)
+	}
+	if opts.Config.Budget <= 0 {
+		return fmt.Errorf("validate options: budget must be > 0: %w", errInvalidOptions)
+	}
+	if opts.Config.MinibatchSize <= 0 {
+		return fmt.Errorf("validate options: minibatch_size must be > 0: %w", errInvalidOptions)
+	}
+	return nil
 }
