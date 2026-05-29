@@ -190,7 +190,7 @@ func (s Schema) Validate(value any, path string) error {
 	}
 }
 
-// ToJSONSchema emits a JSON Schema dict suitable for use as an OpenRouter
+// ToJSONSchema emits a JSON Schema dict suitable for use as an OpenAI-compatible
 // `response_format` schema. Required in Phase 3; defined here since it lives
 // next to the DSL.
 func (s Schema) ToJSONSchema() map[string]any {
