@@ -9,6 +9,127 @@ import (
 	"github.com/anath2/gepa-go/internal/program"
 )
 
+type fakeGenerator struct {
+	text string
+	err  error
+}
+
+func (g *fakeGenerator) Generate(_ context.Context, _, _ string) (string, error) {
+	return g.text, g.err
+}
+
+func TestReflectionProposer_ReturnsExtractedInstruction(t *testing.T) {
+	gen := &fakeGenerator{text: "analysis\n```\nImproved prompt.\n```"}
+	rp := NewReflectionProposer(gen, "test-model")
+
+	req := ReflectionRequest{
+		Candidate:  Candidate{"answer": "old prompt"},
+		ParentID:   0,
+		ModuleName: "answer",
+		Examples:   []program.Example{{Input: map[string]any{"q": "x"}, Expected: map[string]any{"a": "y"}}},
+		Results:    []ExampleResult{{Score: 0, Feedback: "wrong", Output: map[string]any{"a": "z"}}},
+	}
+
+	inst, err := rp.Propose(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Propose() unexpected error: %v", err)
+	}
+	if inst != "Improved prompt." {
+		t.Fatalf("Propose() = %q, want %q", inst, "Improved prompt.")
+	}
+}
+
+func TestReflectionProposer_PropagatesGeneratorError(t *testing.T) {
+	gen := &fakeGenerator{err: errors.New("llm unavailable")}
+	rp := NewReflectionProposer(gen, "test-model")
+
+	_, err := rp.Propose(context.Background(), ReflectionRequest{
+		Candidate:  Candidate{"answer": "prompt"},
+		ModuleName: "answer",
+		Examples:   []program.Example{{}},
+		Results:    []ExampleResult{{}},
+	})
+	if err == nil {
+		t.Fatal("Propose() error = nil, want generator error")
+	}
+	if !strings.Contains(err.Error(), "llm unavailable") {
+		t.Fatalf("Propose() error = %q, want wrapped llm unavailable", err)
+	}
+}
+
+func TestReflectionProposer_FailsOnMissingTripleBacktick(t *testing.T) {
+	gen := &fakeGenerator{text: "Just some plain text without backticks."}
+	rp := NewReflectionProposer(gen, "test-model")
+
+	_, err := rp.Propose(context.Background(), ReflectionRequest{
+		Candidate:  Candidate{"answer": "prompt"},
+		ModuleName: "answer",
+		Examples:   []program.Example{{}},
+		Results:    []ExampleResult{{}},
+	})
+	if err == nil {
+		t.Fatal("Propose() error = nil, want missing block error")
+	}
+	if !strings.Contains(err.Error(), "instruction block missing") {
+		t.Fatalf("Propose() error = %q, want wrapped instruction block missing", err)
+	}
+}
+
+func TestReflectionProposer_FailsOnEmptyResponse(t *testing.T) {
+	gen := &fakeGenerator{text: ""}
+	rp := NewReflectionProposer(gen, "test-model")
+
+	_, err := rp.Propose(context.Background(), ReflectionRequest{
+		Candidate:  Candidate{"answer": "prompt"},
+		ModuleName: "answer",
+		Examples:   []program.Example{{}},
+		Results:    []ExampleResult{{}},
+	})
+	if err == nil {
+		t.Fatal("Propose() error = nil, want missing block error on empty response")
+	}
+	if !strings.Contains(err.Error(), "instruction block missing") {
+		t.Fatalf("Propose() error = %q, want wrapped instruction block missing", err)
+	}
+}
+
+func TestReflectionProposer_RejectsMissingModuleInstruction(t *testing.T) {
+	gen := &fakeGenerator{text: "```\nirrelevant\n```"}
+	rp := NewReflectionProposer(gen, "test-model")
+
+	_, err := rp.Propose(context.Background(), ReflectionRequest{
+		Candidate:  Candidate{"other_module": "prompt"},
+		ModuleName: "answer",
+	})
+	if err == nil {
+		t.Fatal("Propose() error = nil, want missing instruction error")
+	}
+	if !strings.Contains(err.Error(), "reflection prompt invalid") {
+		t.Fatalf("Propose() error = %q, want wrapped reflection prompt invalid", err)
+	}
+}
+
+func TestReflectionProposer_RejectsAlignedExamplesAndResults(t *testing.T) {
+	gen := &fakeGenerator{text: "```\nirrelevant\n```"}
+	rp := NewReflectionProposer(gen, "test-model")
+
+	_, err := rp.Propose(context.Background(), ReflectionRequest{
+		Candidate:  Candidate{"answer": "prompt"},
+		ModuleName: "answer",
+		Examples:   []program.Example{{}},
+	})
+	if err == nil {
+		t.Fatal("Propose() error = nil, want alignment error")
+	}
+	if !strings.Contains(err.Error(), "reflection prompt invalid") {
+		t.Fatalf("Propose() error = %q, want wrapped reflection prompt invalid", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// proposeReflection tests
+// ---------------------------------------------------------------------------
+
 func TestProposeReflection_ReturnsInstruction(t *testing.T) {
 	ref := &scriptedReflector{proposal: " improved "}
 	req := ReflectionRequest{
@@ -54,6 +175,10 @@ func TestProposeReflection_EmptyInstructionIsSoftFailure(t *testing.T) {
 		t.Fatalf("outcome = %#v, want empty reflected instruction failure", out)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// renderReflectionPrompt tests
+// ---------------------------------------------------------------------------
 
 func TestRenderReflectionPromptIncludesInstructionExamplesAndFeedback(t *testing.T) {
 	prompt, err := renderReflectionPrompt(ReflectionRequest{
@@ -127,6 +252,10 @@ func TestRenderReflectionPromptRequiresAlignedExamplesAndResults(t *testing.T) {
 		t.Fatalf("renderReflectionPrompt() error = %v, want errReflectionPromptInvalid", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// extractInstructionBlock tests
+// ---------------------------------------------------------------------------
 
 func TestExtractInstructionBlockUsesFirstTripleBacktickBlock(t *testing.T) {
 	got, err := extractInstructionBlock("analysis\n```text\nUse context carefully.\n```\n```ignored\nsecond\n```")

@@ -46,6 +46,42 @@ func proposeReflection(ctx context.Context, reflector Reflector, req ReflectionR
 	return proposalOutcome{Instruction: instruction}, nil
 }
 
+// Generator generates text from a model and prompt. Satisfied by *llm.Client.
+type Generator interface {
+	Generate(ctx context.Context, model, prompt string) (string, error)
+}
+
+// ReflectionProposer implements Reflector by rendering the meta-prompt
+// from minibatch results and calling an LLM to produce a revised instruction.
+type ReflectionProposer struct {
+	gen   Generator
+	model string
+}
+
+// NewReflectionProposer creates a ReflectionProposer that calls the given
+// model via gen.
+func NewReflectionProposer(gen Generator, model string) *ReflectionProposer {
+	return &ReflectionProposer{gen: gen, model: model}
+}
+
+// Propose renders the reflection meta-prompt, calls the LLM, and extracts
+// the new instruction from the first triple-backtick block.
+func (rp *ReflectionProposer) Propose(ctx context.Context, req ReflectionRequest) (string, error) {
+	prompt, err := renderReflectionPrompt(req)
+	if err != nil {
+		return "", fmt.Errorf("reflection prompt: %w", err)
+	}
+	text, err := rp.gen.Generate(ctx, rp.model, prompt)
+	if err != nil {
+		return "", fmt.Errorf("reflection generate: %w", err)
+	}
+	instruction, err := extractInstructionBlock(text)
+	if err != nil {
+		return "", fmt.Errorf("reflection extract: %w", err)
+	}
+	return instruction, nil
+}
+
 func renderReflectionPrompt(req ReflectionRequest) (string, error) {
 	instruction, ok := req.Candidate[req.ModuleName]
 	if !ok || strings.TrimSpace(instruction) == "" {
