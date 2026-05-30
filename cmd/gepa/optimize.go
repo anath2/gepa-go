@@ -152,10 +152,6 @@ func newOptimizeCmd() *cobra.Command {
 	return cmd
 }
 
-// ---------------------------------------------------------------------------
-// Run helpers
-// ---------------------------------------------------------------------------
-
 // resolveRunID returns flag if non-empty, otherwise a compact timestamp.
 func resolveRunID(flag string) string {
 	if flag != "" {
@@ -218,10 +214,13 @@ func runOptimize(ctx context.Context, problem gepa.Problem, runDir string, logTr
 		Model:   rollout.ChatCompletionModel{Client: client},
 	}
 
+	reflector := gepa.NewReflectionProposer(client, problem.Config.ReflectionModel)
+
 	return gepa.Optimize(ctx, gepa.Options{
 		Problem:   problem,
 		RunDir:    runDir,
 		LogTraces: logTraces,
 		Evaluator: evaluator,
+		Reflector: reflector,
 	})
 }

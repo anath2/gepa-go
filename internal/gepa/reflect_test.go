@@ -126,10 +126,6 @@ func TestReflectionProposer_RejectsAlignedExamplesAndResults(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// proposeReflection tests
-// ---------------------------------------------------------------------------
-
 func TestProposeReflection_ReturnsInstruction(t *testing.T) {
 	ref := &scriptedReflector{proposal: " improved "}
 	req := ReflectionRequest{
@@ -175,10 +171,6 @@ func TestProposeReflection_EmptyInstructionIsSoftFailure(t *testing.T) {
 		t.Fatalf("outcome = %#v, want empty reflected instruction failure", out)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// renderReflectionPrompt tests
-// ---------------------------------------------------------------------------
 
 func TestRenderReflectionPromptIncludesInstructionExamplesAndFeedback(t *testing.T) {
 	prompt, err := renderReflectionPrompt(ReflectionRequest{
@@ -252,10 +244,6 @@ func TestRenderReflectionPromptRequiresAlignedExamplesAndResults(t *testing.T) {
 		t.Fatalf("renderReflectionPrompt() error = %v, want errReflectionPromptInvalid", err)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// extractInstructionBlock tests
-// ---------------------------------------------------------------------------
 
 func TestExtractInstructionBlockUsesFirstTripleBacktickBlock(t *testing.T) {
 	got, err := extractInstructionBlock("analysis\n```text\nUse context carefully.\n```\n```ignored\nsecond\n```")
