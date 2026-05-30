@@ -107,6 +107,7 @@ func TestOptimizeMissingFile(t *testing.T) {
 // four required flags resolve to readable files and the body runs successfully.
 // End-to-end summary-content assertions live in optimize_integration_test.go.
 func TestOptimizeValidPaths(t *testing.T) {
+	setupStubLLM(t, `{"answer":"a1"}`)
 	paths := writeMinimalFixtures(t)
 
 	out, _, err := runCmd(t, "optimize",
@@ -114,11 +115,12 @@ func TestOptimizeValidPaths(t *testing.T) {
 		"--config", paths["config"],
 		"--train", paths["train"],
 		"--val", paths["val"],
+		"--run-id", "valid-paths",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out, "program:") || !strings.Contains(out, "train:") {
+	if !strings.Contains(out, "program:") || !strings.Contains(out, "train:") || !strings.Contains(out, "best:") {
 		t.Errorf("expected summary block on stdout, got:\n%s", out)
 	}
 }

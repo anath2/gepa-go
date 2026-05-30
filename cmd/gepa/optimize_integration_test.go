@@ -1,11 +1,35 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// setupStubLLM routes chat completions to an httptest server for CLI integration tests.
+func setupStubLLM(t *testing.T, moduleOutput string) {
+	t.Helper()
+	t.Setenv("API_KEY", "test-key")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + jsonString(moduleOutput) + `}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("BASE_URL", srv.URL)
+}
+
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
 
 // writeMinimalFixtures writes a complete, minimal-valid set of program /
 // config / train / val files under t.TempDir() and returns their paths keyed
@@ -13,6 +37,7 @@ import (
 func writeMinimalFixtures(t *testing.T) map[string]string {
 	t.Helper()
 	dir := t.TempDir()
+	logDir := filepath.Join(dir, "runs")
 	files := map[string]string{
 		"program": `{
 			"modules": [{
@@ -27,7 +52,8 @@ func writeMinimalFixtures(t *testing.T) map[string]string {
 			"seed": 42,
 			"reflection_model": "anthropic/claude-3.5-sonnet",
 			"task_model": "openai/gpt-4o-mini",
-			"metric": {"kind": "exact_match", "field": "answer"}
+			"metric": {"kind": "exact_match", "field": "answer"},
+			"log_dir": "` + filepath.ToSlash(logDir) + `"
 		}`,
 		"train": `{"input":{"question":"q1"},"expected":{"answer":"a1"}}
 {"input":{"question":"q2"},"expected":{"answer":"a2"}}
@@ -51,12 +77,14 @@ func writeMinimalFixtures(t *testing.T) map[string]string {
 }
 
 func TestOptimizeHappyPathSummary(t *testing.T) {
+	setupStubLLM(t, `{"answer":"a1"}`)
 	p := writeMinimalFixtures(t)
 	out, _, err := runCmd(t, "optimize",
 		"--program", p["program"],
 		"--config", p["config"],
 		"--train", p["train"],
 		"--val", p["val"],
+		"--run-id", "integration-test",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -68,10 +96,17 @@ func TestOptimizeHappyPathSummary(t *testing.T) {
 		`metric:   exact_match on "answer"`,
 		"train:    2 examples",
 		"val:      1 examples",
+		"run:",
+		"best:     candidate",
+		"metric_calls=",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing summary line %q\nfull output:\n%s", want, out)
 		}
+	}
+	runDir := filepath.Join(filepath.Dir(p["program"]), "runs", "integration-test")
+	if _, err := os.Stat(filepath.Join(runDir, "result.json")); err != nil {
+		t.Fatalf("result.json missing under %s: %v", runDir, err)
 	}
 }
 

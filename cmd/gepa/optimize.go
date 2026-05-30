@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/anath2/gepa-go/internal/gepa"
+	"github.com/anath2/gepa-go/internal/llm"
+	"github.com/anath2/gepa-go/internal/rollout"
 )
 
 type optimizeFlags struct {
@@ -101,7 +107,6 @@ func newOptimizeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_ = gepa.Options{Problem: problem, LogTraces: f.logTraces}
 
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "program:  %d modules, %d tools\n", len(problem.Program.Modules), len(problem.Program.Tools))
@@ -110,6 +115,28 @@ func newOptimizeCmd() *cobra.Command {
 			fmt.Fprintf(out, "metric:   %s on %q\n", problem.Config.Metric.Kind, problem.Config.Metric.Field)
 			fmt.Fprintf(out, "train:    %d examples\n", len(problem.Train))
 			fmt.Fprintf(out, "val:      %d examples\n", len(problem.Val))
+
+			runID := resolveRunID(f.runID)
+			runDir, err := prepareRunDir(problem.Config.LogDir, runID, f.program, f.config)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "run:      %s\n", runDir)
+
+			logTraces := f.logTraces || problem.Config.LogTraces
+			result, err := runOptimize(context.Background(), problem, runDir, logTraces)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(out, "best:     candidate %d  train_mean=%.6g  metric_calls=%d\n",
+				result.BestCandidate, result.TrainMean, result.MetricCalls)
+			if result.ValidationMean != nil {
+				fmt.Fprintf(out, "val_mean: %.6g\n", *result.ValidationMean)
+			}
+			if result.ValidationSkipped != "" {
+				fmt.Fprintf(out, "val:      skipped (%s)\n", result.ValidationSkipped)
+			}
 			return nil
 		},
 	}
@@ -123,4 +150,78 @@ func newOptimizeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&f.logTraces, "log-traces", false, "Emit full LLM trajectories to runs/<id>/trajectories/")
 
 	return cmd
+}
+
+// ---------------------------------------------------------------------------
+// Run helpers
+// ---------------------------------------------------------------------------
+
+// resolveRunID returns flag if non-empty, otherwise a compact timestamp.
+func resolveRunID(flag string) string {
+	if flag != "" {
+		return flag
+	}
+	return time.Now().Format("20060102-150405")
+}
+
+// prepareRunDir creates <logDir>/<runID> and snapshots program.json and
+// config.json into it. Returns the run directory path.
+func prepareRunDir(logDir, runID, programPath, configPath string) (string, error) {
+	runDir := filepath.Join(logDir, runID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		return "", fmt.Errorf("create run dir: %w", err)
+	}
+	for _, pair := range []struct {
+		src  string
+		name string
+	}{
+		{programPath, "program.json"},
+		{configPath, "config.json"},
+	} {
+		if err := copyFile(pair.src, filepath.Join(runDir, pair.name)); err != nil {
+			return "", fmt.Errorf("snapshot %s: %w", pair.name, err)
+		}
+	}
+	return runDir, nil
+}
+
+// copyFile copies a file from src to dst, with error-checked close.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+// runOptimize wires the LLM client and rollout evaluator and runs the GEPA
+// optimization loop.
+func runOptimize(ctx context.Context, problem gepa.Problem, runDir string, logTraces bool) (gepa.Result, error) {
+	client, err := llm.NewClient()
+	if err != nil {
+		return gepa.Result{}, err
+	}
+
+	evaluator := rollout.Evaluator{
+		Program: problem.Program,
+		Config:  problem.Config,
+		Model:   rollout.ChatCompletionModel{Client: client},
+	}
+
+	return gepa.Optimize(ctx, gepa.Options{
+		Problem:   problem,
+		RunDir:    runDir,
+		LogTraces: logTraces,
+		Evaluator: evaluator,
+	})
 }
