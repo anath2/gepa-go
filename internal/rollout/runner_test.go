@@ -46,9 +46,6 @@ func TestEvaluatorSingleModuleUsesCandidatePromptAndInput(t *testing.T) {
 		t.Fatalf("len(requests) = %d, want 1", len(model.requests))
 	}
 	req := model.requests[0]
-	if req.Model != "task-model" {
-		t.Fatalf("Model = %q, want %q", req.Model, "task-model")
-	}
 	if req.Instruction != "prompt v1" {
 		t.Fatalf("Instruction = %q, want %q", req.Instruction, "prompt v1")
 	}

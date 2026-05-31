@@ -208,13 +208,16 @@ func runOptimize(ctx context.Context, problem gepa.Problem, runDir string, logTr
 		return gepa.Result{}, err
 	}
 
+	taskModel := llm.Model{Name: problem.Config.TaskModel, Client: client}
+	reflectionModel := llm.Model{Name: problem.Config.ReflectionModel, Client: client}
+
 	evaluator := rollout.Evaluator{
 		Program: problem.Program,
 		Config:  problem.Config,
-		Model:   rollout.ChatCompletionModel{Client: client},
+		Model:   rollout.NewLLMTaskModel(taskModel),
 	}
 
-	reflector := gepa.NewReflectionProposer(client, problem.Config.ReflectionModel)
+	reflector := gepa.NewReflectionProposer(gepa.NewLLMReflectionModel(reflectionModel))
 
 	return gepa.Optimize(ctx, gepa.Options{
 		Problem:   problem,

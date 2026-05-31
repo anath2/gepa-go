@@ -12,20 +12,18 @@ import (
 
 var errEmptyChatResponse = errors.New("rollout: chat response has no choices")
 
-// ChatCompleter is the subset of llm.Client used for module execution.
-type ChatCompleter interface {
-	Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error)
+type llmTaskModel struct {
+	model llm.Model
 }
 
-// ChatCompletionModel executes modules via an OpenAI-compatible
-// /chat/completions endpoint.
-type ChatCompletionModel struct {
-	Client ChatCompleter
+// NewLLMTaskModel returns a TaskModel backed by the given bound LLM model.
+func NewLLMTaskModel(model llm.Model) TaskModel {
+	return llmTaskModel{model: model}
 }
 
-func (m ChatCompletionModel) Generate(ctx context.Context, req ModuleRequest) (ModuleResponse, error) {
-	if m.Client == nil {
-		return ModuleResponse{}, errors.New("rollout: nil chat client")
+func (m llmTaskModel) Generate(ctx context.Context, req ModuleRequest) (ModuleResponse, error) {
+	if m.model.Client == nil {
+		return ModuleResponse{}, errors.New("rollout: nil model client")
 	}
 	if err := ctx.Err(); err != nil {
 		return ModuleResponse{}, err
@@ -38,7 +36,7 @@ func (m ChatCompletionModel) Generate(ctx context.Context, req ModuleRequest) (M
 
 	prompt := strings.TrimSpace(req.Instruction) + "\n\nInput JSON:\n" + string(inputJSON)
 	chatReq := llm.ChatRequest{
-		Model: req.Model,
+		Model: m.model.Name,
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
 		},
@@ -54,7 +52,7 @@ func (m ChatCompletionModel) Generate(ctx context.Context, req ModuleRequest) (M
 		}
 	}
 
-	resp, err := m.Client.Chat(ctx, chatReq)
+	resp, err := m.model.Client.Chat(ctx, chatReq)
 	if err != nil {
 		return ModuleResponse{}, err
 	}

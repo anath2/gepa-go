@@ -24,7 +24,6 @@ type TaskModel interface {
 }
 
 type ModuleRequest struct {
-	Model        string
 	ModuleName   string
 	Instruction  string
 	Input        map[string]any
@@ -67,7 +66,6 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 			return gepa.ExampleResult{}, err
 		}
 		resp, err := e.Model.Generate(ctx, ModuleRequest{
-			Model:        e.Config.TaskModel,
 			ModuleName:   module.Name,
 			Instruction:  instruction,
 			Input:        moduleInput,

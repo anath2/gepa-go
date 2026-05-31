@@ -9,18 +9,18 @@ import (
 	"github.com/anath2/gepa-go/internal/program"
 )
 
-type fakeGenerator struct {
+type fakeReflectionModel struct {
 	text string
 	err  error
 }
 
-func (g *fakeGenerator) Generate(_ context.Context, _, _ string) (string, error) {
-	return g.text, g.err
+func (m *fakeReflectionModel) Generate(_ context.Context, _ string) (string, error) {
+	return m.text, m.err
 }
 
 func TestReflectionProposer_ReturnsExtractedInstruction(t *testing.T) {
-	gen := &fakeGenerator{text: "analysis\n```\nImproved prompt.\n```"}
-	rp := NewReflectionProposer(gen, "test-model")
+	model := &fakeReflectionModel{text: "analysis\n```\nImproved prompt.\n```"}
+	rp := NewReflectionProposer(model)
 
 	req := ReflectionRequest{
 		Candidate:  Candidate{"answer": "old prompt"},
@@ -39,9 +39,9 @@ func TestReflectionProposer_ReturnsExtractedInstruction(t *testing.T) {
 	}
 }
 
-func TestReflectionProposer_PropagatesGeneratorError(t *testing.T) {
-	gen := &fakeGenerator{err: errors.New("llm unavailable")}
-	rp := NewReflectionProposer(gen, "test-model")
+func TestReflectionProposer_PropagatesModelError(t *testing.T) {
+	model := &fakeReflectionModel{err: errors.New("llm unavailable")}
+	rp := NewReflectionProposer(model)
 
 	_, err := rp.Propose(context.Background(), ReflectionRequest{
 		Candidate:  Candidate{"answer": "prompt"},
@@ -50,7 +50,7 @@ func TestReflectionProposer_PropagatesGeneratorError(t *testing.T) {
 		Results:    []ExampleResult{{}},
 	})
 	if err == nil {
-		t.Fatal("Propose() error = nil, want generator error")
+		t.Fatal("Propose() error = nil, want model error")
 	}
 	if !strings.Contains(err.Error(), "llm unavailable") {
 		t.Fatalf("Propose() error = %q, want wrapped llm unavailable", err)
@@ -58,8 +58,8 @@ func TestReflectionProposer_PropagatesGeneratorError(t *testing.T) {
 }
 
 func TestReflectionProposer_FailsOnMissingTripleBacktick(t *testing.T) {
-	gen := &fakeGenerator{text: "Just some plain text without backticks."}
-	rp := NewReflectionProposer(gen, "test-model")
+	model := &fakeReflectionModel{text: "Just some plain text without backticks."}
+	rp := NewReflectionProposer(model)
 
 	_, err := rp.Propose(context.Background(), ReflectionRequest{
 		Candidate:  Candidate{"answer": "prompt"},
@@ -76,8 +76,8 @@ func TestReflectionProposer_FailsOnMissingTripleBacktick(t *testing.T) {
 }
 
 func TestReflectionProposer_FailsOnEmptyResponse(t *testing.T) {
-	gen := &fakeGenerator{text: ""}
-	rp := NewReflectionProposer(gen, "test-model")
+	model := &fakeReflectionModel{text: ""}
+	rp := NewReflectionProposer(model)
 
 	_, err := rp.Propose(context.Background(), ReflectionRequest{
 		Candidate:  Candidate{"answer": "prompt"},
@@ -94,8 +94,8 @@ func TestReflectionProposer_FailsOnEmptyResponse(t *testing.T) {
 }
 
 func TestReflectionProposer_RejectsMissingModuleInstruction(t *testing.T) {
-	gen := &fakeGenerator{text: "```\nirrelevant\n```"}
-	rp := NewReflectionProposer(gen, "test-model")
+	model := &fakeReflectionModel{text: "```\nirrelevant\n```"}
+	rp := NewReflectionProposer(model)
 
 	_, err := rp.Propose(context.Background(), ReflectionRequest{
 		Candidate:  Candidate{"other_module": "prompt"},
@@ -110,8 +110,8 @@ func TestReflectionProposer_RejectsMissingModuleInstruction(t *testing.T) {
 }
 
 func TestReflectionProposer_RejectsAlignedExamplesAndResults(t *testing.T) {
-	gen := &fakeGenerator{text: "```\nirrelevant\n```"}
-	rp := NewReflectionProposer(gen, "test-model")
+	model := &fakeReflectionModel{text: "```\nirrelevant\n```"}
+	rp := NewReflectionProposer(model)
 
 	_, err := rp.Propose(context.Background(), ReflectionRequest{
 		Candidate:  Candidate{"answer": "prompt"},

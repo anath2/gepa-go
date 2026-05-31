@@ -13,7 +13,7 @@ import (
 	"github.com/anath2/gepa-go/internal/program"
 )
 
-func TestChatCompletionModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
+func TestLLMTaskModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
 	t.Setenv("API_KEY", "test-key")
 
 	var gotReq llm.ChatRequest
@@ -31,9 +31,8 @@ func TestChatCompletionModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
 
-	model := ChatCompletionModel{Client: client}
+	model := NewLLMTaskModel(llm.Model{Name: "task-model", Client: client})
 	resp, err := model.Generate(context.Background(), ModuleRequest{
-		Model:       "task-model",
 		ModuleName:  "answer",
 		Instruction: "Answer the question.",
 		Input:       map[string]any{"question": "capital?"},
@@ -59,7 +58,7 @@ func TestChatCompletionModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
 	}
 }
 
-func TestChatCompletionModelEvaluatorEndToEnd(t *testing.T) {
+func TestLLMTaskModelEvaluatorEndToEnd(t *testing.T) {
 	t.Setenv("API_KEY", "test-key")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +84,7 @@ func TestChatCompletionModelEvaluatorEndToEnd(t *testing.T) {
 			},
 		},
 		Config: config.Config{TaskModel: "task-model", Metric: config.Metric{Kind: "exact_match", Field: "answer"}},
-		Model:  ChatCompletionModel{Client: client},
+		Model:  NewLLMTaskModel(llm.Model{Name: "task-model", Client: client}),
 	}
 
 	results, err := eval.Evaluate(context.Background(), gepa.Candidate{"answer": "Answer."}, []program.Example{

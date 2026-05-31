@@ -46,22 +46,15 @@ func proposeReflection(ctx context.Context, reflector Reflector, req ReflectionR
 	return proposalOutcome{Instruction: instruction}, nil
 }
 
-// Generator generates text from a model and prompt. Satisfied by *llm.Client.
-type Generator interface {
-	Generate(ctx context.Context, model, prompt string) (string, error)
-}
-
 // ReflectionProposer implements Reflector by rendering the meta-prompt
 // from minibatch results and calling an LLM to produce a revised instruction.
 type ReflectionProposer struct {
-	gen   Generator
-	model string
+	model ReflectionModel
 }
 
-// NewReflectionProposer creates a ReflectionProposer that calls the given
-// model via gen.
-func NewReflectionProposer(gen Generator, model string) *ReflectionProposer {
-	return &ReflectionProposer{gen: gen, model: model}
+// NewReflectionProposer creates a ReflectionProposer that calls the given model.
+func NewReflectionProposer(model ReflectionModel) *ReflectionProposer {
+	return &ReflectionProposer{model: model}
 }
 
 // Propose renders the reflection meta-prompt, calls the LLM, and extracts
@@ -71,7 +64,7 @@ func (rp *ReflectionProposer) Propose(ctx context.Context, req ReflectionRequest
 	if err != nil {
 		return "", fmt.Errorf("reflection prompt: %w", err)
 	}
-	text, err := rp.gen.Generate(ctx, rp.model, prompt)
+	text, err := rp.model.Generate(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("reflection generate: %w", err)
 	}
