@@ -216,6 +216,57 @@ func TestRenderReflectionPromptIncludesInstructionExamplesAndFeedback(t *testing
 	}
 }
 
+func TestRenderReflectionPromptIncludesSelectedModuleSchemas(t *testing.T) {
+	prompt, err := renderReflectionPrompt(ReflectionRequest{
+		Candidate:  Candidate{"retriever": "Extract concise supporting snippets from the provided document."},
+		ParentID:   0,
+		ModuleName: "retriever",
+		Module: program.Module{
+			Name: "retriever",
+			InputSchema: program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{
+				"question": {Kind: program.KindString},
+				"document": {Kind: program.KindString},
+			}},
+			OutputSchema: program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{
+				"snippets": {
+					Kind: program.KindList,
+					Item: &program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{
+						"text":       {Kind: program.KindString},
+						"confidence": {Kind: program.KindFloat},
+					}},
+				},
+			}},
+		},
+		Examples: []program.Example{{
+			Input: map[string]any{
+				"question": "Who wrote Hamlet?",
+				"document": "Hamlet is a tragedy written by William Shakespeare sometime between 1599 and 1601.",
+			},
+			Expected: map[string]any{"answer": "William Shakespeare"},
+		}},
+		Results: []ExampleResult{{
+			Score:    0,
+			Feedback: "final answer did not cite the author",
+			Output:   map[string]any{"answer": "unknown"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("renderReflectionPrompt() unexpected error: %v", err)
+	}
+
+	for _, want := range []string{
+		"Selected module input schema",
+		"Selected module output schema",
+		`"snippets"`,
+		`"confidence"`,
+		"Do not add fields or responsibilities outside this output schema",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("rendered prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+}
+
 func TestRenderReflectionPromptRequiresCurrentModuleInstruction(t *testing.T) {
 	_, err := renderReflectionPrompt(ReflectionRequest{
 		Candidate:  Candidate{"retriever": "Retrieve supporting context."},

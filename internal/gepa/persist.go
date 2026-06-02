@@ -29,9 +29,9 @@ type runArtifacts struct {
 }
 
 type runWriter struct {
-	paths       runArtifacts
-	enabled     bool
-	logTraces   bool
+	paths     runArtifacts
+	enabled   bool
+	logTraces bool
 	// traceByIter tracks next per-iteration trajectory suffix for filenames only.
 	traceByIter map[int]int
 }
@@ -137,6 +137,15 @@ func (w *runWriter) appendRunEvent(event eventRecord) error {
 		return nil
 	}
 	return appendEvent(w.paths, event)
+}
+
+// writeFinalState rewrites state.json with final counters after terminal
+// evaluations that did not necessarily accept a new candidate.
+func (w *runWriter) writeFinalState(state poolState) error {
+	if !w.enabled {
+		return nil
+	}
+	return writeState(w.paths, state)
 }
 
 // writeFinalResult writes the completed optimization result artifact.

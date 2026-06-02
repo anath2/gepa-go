@@ -136,7 +136,7 @@ func TestOptimizeEvaluatesSeedOnFullTrain(t *testing.T) {
 	opts := baseOpts(prog, train, engineConfig(20, 2, 1))
 	opts.Evaluator = &scriptedEvaluator{
 		trainSize: len(train),
-		scoreFor: func(Candidate, []program.Example) float64 { return 0.25 },
+		scoreFor:  func(Candidate, []program.Example) float64 { return 0.25 },
 	}
 	opts.Reflector = &scriptedReflector{proposal: "answer v2"}
 
@@ -400,6 +400,18 @@ func TestOptimizePersistsRejectedProposalEvent(t *testing.T) {
 	}
 	if !containsEventType(events, eventCandidateRejected) {
 		t.Fatalf("events = %#v, want candidate_rejected", events)
+	}
+
+	var state poolState
+	if err := readJSONFile(paths.StatePath, &state); err != nil {
+		t.Fatalf("read state.json: %v", err)
+	}
+	var result Result
+	if err := readJSONFile(paths.ResultPath, &result); err != nil {
+		t.Fatalf("read result.json: %v", err)
+	}
+	if state.MetricCalls != result.MetricCalls {
+		t.Fatalf("state metric_calls = %d, result metric_calls = %d; want final state to match result", state.MetricCalls, result.MetricCalls)
 	}
 }
 

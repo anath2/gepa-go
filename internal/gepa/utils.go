@@ -77,10 +77,18 @@ func hasBudget(metricCalls, budget, cost int) bool {
 
 // moduleNameAtIteration selects the module to mutate using round-robin over program.Modules.
 func moduleNameAtIteration(prog program.Program, iter int) (string, error) {
-	if len(prog.Modules) == 0 {
-		return "", fmt.Errorf("module picker: program has no modules")
+	module, err := moduleAtIteration(prog, iter)
+	if err != nil {
+		return "", err
 	}
-	return prog.Modules[iter%len(prog.Modules)].Name, nil
+	return module.Name, nil
+}
+
+func moduleAtIteration(prog program.Program, iter int) (program.Module, error) {
+	if len(prog.Modules) == 0 {
+		return program.Module{}, fmt.Errorf("module picker: program has no modules")
+	}
+	return prog.Modules[iter%len(prog.Modules)], nil
 }
 
 // minibatchCost returns how many metric calls a minibatch evaluation consumes.

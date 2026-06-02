@@ -20,6 +20,7 @@ type ReflectionRequest struct {
 	Candidate    Candidate         `json:"candidate"`
 	ParentID     int               `json:"parent_id"`
 	ModuleName   string            `json:"module_name"`
+	Module       program.Module    `json:"module,omitempty"`
 	BatchIndices []int             `json:"batch_indices,omitempty"`
 	Examples     []program.Example `json:"examples,omitempty"`
 	Results      []ExampleResult   `json:"results,omitempty"`
@@ -119,6 +120,19 @@ func renderReflectionPrompt(req ReflectionRequest) (string, error) {
 	fmt.Fprintf(&b, "You are improving one module instruction in a compound AI system.\n\n")
 	fmt.Fprintf(&b, "Module: %s\n", req.ModuleName)
 	fmt.Fprintf(&b, "Current instruction:\n%s\n\n", instruction)
+	if req.Module.Name != "" {
+		inputSchema, err := prettyJSON(req.Module.InputSchema.ToJSONSchema())
+		if err != nil {
+			return "", fmt.Errorf("%w: module input schema: %v", errReflectionPromptInvalid, err)
+		}
+		outputSchema, err := prettyJSON(req.Module.OutputSchema.ToJSONSchema())
+		if err != nil {
+			return "", fmt.Errorf("%w: module output schema: %v", errReflectionPromptInvalid, err)
+		}
+		fmt.Fprintf(&b, "Selected module input schema:\n%s\n", inputSchema)
+		fmt.Fprintf(&b, "Selected module output schema:\n%s\n", outputSchema)
+		fmt.Fprintf(&b, "Do not add fields or responsibilities outside this output schema.\n\n")
+	}
 	fmt.Fprintf(&b, "Review the minibatch examples, model outputs, scores, and feedback below.\n")
 	fmt.Fprintf(&b, "Return only the new instruction inside triple backticks.\n\n")
 

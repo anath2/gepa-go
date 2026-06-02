@@ -69,10 +69,11 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		}
 
 		// Select module to mutate (Alg. 1, line 8); round-robin picker in v0.
-		moduleName, err := moduleNameAtIteration(opts.Program, iter)
+		module, err := moduleAtIteration(opts.Program, iter)
 		if err != nil {
 			return Result{}, err
 		}
+		moduleName := module.Name
 
 		// Sample minibatch M from D_feedback (Alg. 1, line 9).
 		batchIndices, err := sampleMinibatch(rng, trainLen, minibatchSize)
@@ -94,10 +95,12 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		}
 
 		// Reflectively update the module prompt from feedback + traces (Alg. 1, lines 10-12).
+		// TODO name and module don't need separate properties
 		reflectionReq := ReflectionRequest{
 			Candidate:    parentPrompts,
 			ParentID:     parentID,
 			ModuleName:   moduleName,
+			Module:       module,
 			BatchIndices: batchIndices,
 			Examples:     batch,
 			Results:      parentEval.Results,
@@ -223,7 +226,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	result.TrainMean = trainMean
-	
+
 	// Final score of the best candidate on the held-out set (paper's test set, not part of
 	// Alg. 1); reported only, never used for selection, which relies on the train/D_pareto scores above.
 	if len(opts.Val) > 0 && hasBudget(state.MetricCalls, opts.Config.Budget, len(opts.Val)) {
@@ -238,6 +241,9 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		result.ValidationSkipped = fmt.Sprintf("insufficient budget: need %d metric calls, have %d remaining", len(opts.Val), opts.Config.Budget-state.MetricCalls)
 	}
 
+	if err := writer.writeFinalState(state); err != nil {
+		return Result{}, err
+	}
 	if err := writer.writeFinalResult(result); err != nil {
 		return Result{}, err
 	}
