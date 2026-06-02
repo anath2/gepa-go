@@ -160,15 +160,15 @@ func TestInspectNoArg(t *testing.T) {
 	}
 }
 
-func TestInspectExistingDir(t *testing.T) {
-	dir := t.TempDir()
-	out, _, err := runCmd(t, "inspect", dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestInspectRunDirNotFound(t *testing.T) {
+	bad := filepath.Join(t.TempDir(), "missing-run")
+	_, _, err := runCmd(t, "inspect", bad)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	want := "would inspect " + dir + " (format=text show_tree=true show_events=true)"
-	if !strings.Contains(out, want) {
-		t.Errorf("got %q\nwant substring %q", out, want)
+	want := "run directory not found at " + bad
+	if err.Error() != want {
+		t.Errorf("got %q\nwant %q", err.Error(), want)
 	}
 }
 
