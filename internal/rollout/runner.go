@@ -72,6 +72,13 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 			OutputSchema: module.OutputSchema.ToJSONSchema(),
 		})
 		if err != nil {
+			if errors.Is(err, errDecodeModuleOutput) {
+				return gepa.ExampleResult{
+					Score:    0,
+					Feedback: fmt.Sprintf("module %s output decode failed: %v", module.Name, err),
+					Error:    err.Error(),
+				}, nil
+			}
 			return gepa.ExampleResult{}, err
 		}
 		if resp.Output == nil {

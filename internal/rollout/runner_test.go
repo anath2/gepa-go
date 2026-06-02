@@ -3,6 +3,8 @@ package rollout
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/anath2/gepa-go/internal/config"
@@ -165,6 +167,40 @@ func TestEvaluatorModelFailureReturnsError(t *testing.T) {
 	})
 	if !errors.Is(err, boom) {
 		t.Fatalf("Evaluate() error = %v, want %v", err, boom)
+	}
+}
+
+func TestEvaluatorDecodeFailureReturnsScoredExampleFailure(t *testing.T) {
+	decodeErr := fmt.Errorf("%w: unexpected end of JSON input", errDecodeModuleOutput)
+	eval := Evaluator{
+		Program: program.Program{
+			Modules: []program.Module{{
+				Name:         "answer",
+				InputSchema:  objectSchema("question", program.KindString),
+				OutputSchema: objectSchema("answer", program.KindString),
+			}},
+		},
+		Config: config.Config{TaskModel: "task-model", Metric: config.Metric{Kind: "exact_match", Field: "answer"}},
+		Model:  &fakeTaskModel{err: decodeErr},
+	}
+
+	results, err := eval.Evaluate(context.Background(), gepa.Candidate{"answer": "prompt"}, []program.Example{
+		{Input: map[string]any{"question": "q"}, Expected: map[string]any{"answer": "x"}},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v, want nil", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].Score != 0 {
+		t.Fatalf("Score = %v, want 0", results[0].Score)
+	}
+	if results[0].Feedback == "" {
+		t.Fatal("Feedback = empty, want decode failure feedback")
+	}
+	if !strings.Contains(results[0].Error, decodeErr.Error()) {
+		t.Fatalf("Error = %q, want decode failure error", results[0].Error)
 	}
 }
 
