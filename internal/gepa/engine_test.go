@@ -701,6 +701,114 @@ func TestOptimizeNoPersistenceWhenRunDirEmpty(t *testing.T) {
 	}
 }
 
+func TestOptimizeNoTrajectoriesWhenLogTracesDisabled(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(20, 2, 31))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.LogTraces = false
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer seed"}
+
+	if _, err := Optimize(context.Background(), opts); err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	if _, err := os.Stat(paths.TrajectoriesDir); !os.IsNotExist(err) {
+		t.Fatalf("trajectories dir should not exist when LogTraces=false: stat err=%v", err)
+	}
+}
+
+func TestOptimizeWritesRejectedProposalTrajectoryWhenLogTracesEnabled(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(20, 2, 32))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.LogTraces = true
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{proposal: "answer seed"}
+
+	if _, err := Optimize(context.Background(), opts); err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	entries, err := os.ReadDir(paths.TrajectoriesDir)
+	if err != nil {
+		t.Fatalf("ReadDir(trajectories): %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one trajectory file")
+	}
+
+	var tr trajectoryRecord
+	if err := readJSONFile(filepath.Join(paths.TrajectoriesDir, entries[0].Name()), &tr); err != nil {
+		t.Fatalf("read trajectory: %v", err)
+	}
+	if tr.Accepted {
+		t.Fatalf("trajectory.Accepted = true, want false for rejected proposal")
+	}
+	if tr.Reason != rejectReasonNoImprovement {
+		t.Fatalf("trajectory.Reason = %q, want %q", tr.Reason, rejectReasonNoImprovement)
+	}
+	if tr.ExtractedInstruction == "" {
+		t.Fatal("trajectory.ExtractedInstruction empty, want proposal instruction")
+	}
+}
+
+func TestOptimizeWritesFailedProposalTrajectoryWhenLogTracesEnabled(t *testing.T) {
+	prog := singleModuleProgram()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(20, 2, 33))
+	opts.Val = nil
+	opts.RunDir = runDir
+	opts.LogTraces = true
+	opts.Evaluator = &scriptedEvaluator{
+		trainSize: len(train),
+		scoreFor:  func(Candidate, []program.Example) float64 { return 1 },
+	}
+	opts.Reflector = &scriptedReflector{err: errors.New("reflection failed")}
+
+	if _, err := Optimize(context.Background(), opts); err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+
+	paths := newRunArtifacts(runDir)
+	entries, err := os.ReadDir(paths.TrajectoriesDir)
+	if err != nil {
+		t.Fatalf("ReadDir(trajectories): %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one trajectory file")
+	}
+
+	var tr trajectoryRecord
+	if err := readJSONFile(filepath.Join(paths.TrajectoriesDir, entries[0].Name()), &tr); err != nil {
+		t.Fatalf("read trajectory: %v", err)
+	}
+	if tr.Accepted {
+		t.Fatalf("trajectory.Accepted = true, want false for proposal failure")
+	}
+	if tr.Reason != "reflection failed" {
+		t.Fatalf("trajectory.Reason = %q, want reflection failed", tr.Reason)
+	}
+	if tr.ExtractedInstruction != "" {
+		t.Fatalf("trajectory.ExtractedInstruction = %q, want empty on failed proposal", tr.ExtractedInstruction)
+	}
+}
+
 func dirNames(entries []os.DirEntry) string {
 	names := make([]string, len(entries))
 	for i, e := range entries {

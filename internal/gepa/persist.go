@@ -20,39 +20,45 @@ const (
 const rejectReasonNoImprovement = "proposal did not strictly improve minibatch mean"
 
 type runArtifacts struct {
-	RunDir        string
-	StatePath     string
-	EventsPath    string
-	CandidatesDir string
-	ResultPath    string
+	RunDir          string
+	StatePath       string
+	EventsPath      string
+	CandidatesDir   string
+	TrajectoriesDir string
+	ResultPath      string
 }
 
 type runWriter struct {
-	paths   runArtifacts
-	enabled bool
+	paths       runArtifacts
+	enabled     bool
+	logTraces   bool
+	// traceByIter tracks next per-iteration trajectory suffix for filenames only.
+	traceByIter map[int]int
 }
 
 // newRunWriter creates a run artifact writer when a run directory is configured.
-func newRunWriter(runDir string) runWriter {
+func newRunWriter(runDir string, logTraces bool) runWriter {
 	if runDir == "" {
 		return runWriter{}
 	}
 	return runWriter{
-		paths:   newRunArtifacts(runDir),
-		enabled: true,
+		paths:       newRunArtifacts(runDir),
+		enabled:     true,
+		logTraces:   logTraces,
+		traceByIter: map[int]int{},
 	}
 }
 
 // init prepares the run artifact directories before optimization starts.
-func (w runWriter) init() error {
+func (w *runWriter) init() error {
 	if !w.enabled {
 		return nil
 	}
-	return ensureRunDir(w.paths)
+	return ensureRunDir(w.paths, w.logTraces)
 }
 
 // persistSeed writes the evaluated seed candidate, state snapshot, and seed event.
-func (w runWriter) persistSeed(state poolState) error {
+func (w *runWriter) persistSeed(state poolState) error {
 	if !w.enabled {
 		return nil
 	}
@@ -72,7 +78,7 @@ func (w runWriter) persistSeed(state poolState) error {
 }
 
 // persistAcceptedCandidate writes an accepted proposal and records its acceptance event.
-func (w runWriter) persistAcceptedCandidate(state poolState, id int, parentMean, proposalMean float64, parentID int, moduleName string, batchIndices []int) error {
+func (w *runWriter) persistAcceptedCandidate(state poolState, id int, parentMean, proposalMean float64, parentID int, moduleName string, batchIndices []int) error {
 	if !w.enabled {
 		return nil
 	}
@@ -92,20 +98,20 @@ func (w runWriter) persistAcceptedCandidate(state poolState, id int, parentMean,
 	return w.appendRunEvent(ev)
 }
 
-func (w runWriter) proposalRequested(state poolState, parentID int, moduleName string, batchIndices []int) error {
+func (w *runWriter) proposalRequested(state poolState, parentID int, moduleName string, batchIndices []int) error {
 	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
 	ev.Type = eventProposalRequested
 	return w.appendRunEvent(ev)
 }
 
-func (w runWriter) proposalFailed(state poolState, parentID int, moduleName string, batchIndices []int, reason string) error {
+func (w *runWriter) proposalFailed(state poolState, parentID int, moduleName string, batchIndices []int, reason string) error {
 	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
 	ev.Type = eventProposalFailed
 	ev.Reason = reason
 	return w.appendRunEvent(ev)
 }
 
-func (w runWriter) proposalEvaluated(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {
+func (w *runWriter) proposalEvaluated(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {
 	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
 	ev.Type = eventProposalEvaluated
 	ev.ParentMean = &parentMean
@@ -113,7 +119,7 @@ func (w runWriter) proposalEvaluated(state poolState, parentID int, moduleName s
 	return w.appendRunEvent(ev)
 }
 
-func (w runWriter) proposalRejected(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {
+func (w *runWriter) proposalRejected(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {
 	rejected := false
 	ev := proposalEventContext(state, parentID, moduleName, batchIndices)
 	ev.Type = eventCandidateRejected
@@ -126,7 +132,7 @@ func (w runWriter) proposalRejected(state poolState, parentID int, moduleName st
 
 // appendRunEvent appends when RunDir was set; callers use package appendEvent(paths, ...)
 // directly for tests and other low-level persistence.
-func (w runWriter) appendRunEvent(event eventRecord) error {
+func (w *runWriter) appendRunEvent(event eventRecord) error {
 	if !w.enabled {
 		return nil
 	}
@@ -134,7 +140,7 @@ func (w runWriter) appendRunEvent(event eventRecord) error {
 }
 
 // writeFinalResult writes the completed optimization result artifact.
-func (w runWriter) writeFinalResult(result Result) error {
+func (w *runWriter) writeFinalResult(result Result) error {
 	if !w.enabled {
 		return nil
 	}
@@ -154,24 +160,59 @@ func proposalEventContext(state poolState, parentID int, moduleName string, batc
 	}
 }
 
+type trajectoryExample struct {
+	Input    map[string]any `json:"input"`
+	Expected map[string]any `json:"expected"`
+	Output   map[string]any `json:"output,omitempty"`
+	Score    float64        `json:"score"`
+	Feedback string         `json:"feedback"`
+	Error    string         `json:"error,omitempty"`
+}
+
+type trajectoryRecord struct {
+	Iteration            int                 `json:"iteration"`
+	AttemptInIteration   int                 `json:"attempt_in_iteration"`
+	ParentID             int                 `json:"parent_id"`
+	ParentIDs            []int               `json:"parent_ids"`
+	ProposalKind         proposalKind        `json:"proposal_kind"`
+	MutatedModule        string              `json:"mutated_module"`
+	BatchIndices         []int               `json:"batch_indices,omitempty"`
+	Accepted             bool                `json:"accepted"`
+	Reason               string              `json:"reason,omitempty"`
+	ParentMean           *float64            `json:"parent_mean,omitempty"`
+	ProposalMean         *float64            `json:"proposal_mean,omitempty"`
+	ParentPrompt         string              `json:"parent_prompt,omitempty"`
+	ProposedPrompt       string              `json:"proposed_prompt,omitempty"`
+	RawResponseText      string              `json:"raw_response_text,omitempty"`
+	ExtractedInstruction string              `json:"extracted_instruction,omitempty"`
+	ReasoningTrace       string              `json:"reasoning_trace,omitempty"`
+	Examples             []trajectoryExample `json:"examples,omitempty"`
+}
+
 // newRunArtifacts returns the canonical artifact paths for a run directory.
 func newRunArtifacts(runDir string) runArtifacts {
 	return runArtifacts{
-		RunDir:        runDir,
-		StatePath:     filepath.Join(runDir, "state.json"),
-		EventsPath:    filepath.Join(runDir, "events.jsonl"),
-		CandidatesDir: filepath.Join(runDir, "candidates"),
-		ResultPath:    filepath.Join(runDir, "result.json"),
+		RunDir:          runDir,
+		StatePath:       filepath.Join(runDir, "state.json"),
+		EventsPath:      filepath.Join(runDir, "events.jsonl"),
+		CandidatesDir:   filepath.Join(runDir, "candidates"),
+		TrajectoriesDir: filepath.Join(runDir, "trajectories"),
+		ResultPath:      filepath.Join(runDir, "result.json"),
 	}
 }
 
 // ensureRunDir creates the directory tree required for run artifacts.
-func ensureRunDir(paths runArtifacts) error {
+func ensureRunDir(paths runArtifacts, logTraces bool) error {
 	if err := os.MkdirAll(paths.RunDir, 0o755); err != nil {
 		return fmt.Errorf("ensure run dir: %w", err)
 	}
 	if err := os.MkdirAll(paths.CandidatesDir, 0o755); err != nil {
 		return fmt.Errorf("ensure candidates dir: %w", err)
+	}
+	if logTraces {
+		if err := os.MkdirAll(paths.TrajectoriesDir, 0o755); err != nil {
+			return fmt.Errorf("ensure trajectories dir: %w", err)
+		}
 	}
 	return nil
 }
@@ -212,6 +253,22 @@ func writeCandidate(paths runArtifacts, id int, record candidateRecord) error {
 // writeResult atomically writes the final optimization result.
 func writeResult(paths runArtifacts, result Result) error {
 	return atomicWriteJSON(paths.ResultPath, result)
+}
+
+func writeTrajectory(paths runArtifacts, filename string, trace trajectoryRecord) error {
+	return atomicWriteJSON(filepath.Join(paths.TrajectoriesDir, filename), trace)
+}
+
+func (w *runWriter) writeProposalTrace(state poolState, trace trajectoryRecord) error {
+	if !w.enabled || !w.logTraces {
+		return nil
+	}
+	attempt := w.traceByIter[state.Iteration]
+	w.traceByIter[state.Iteration] = attempt + 1
+	trace.Iteration = state.Iteration
+	trace.AttemptInIteration = attempt
+	filename := fmt.Sprintf("%04d-%02d.json", state.Iteration, attempt)
+	return writeTrajectory(w.paths, filename, trace)
 }
 
 func atomicWriteJSON(path string, v any) error {

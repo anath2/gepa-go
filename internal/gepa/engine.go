@@ -34,7 +34,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 	trainLen := len(opts.Train)
 	rng := newRNG(opts.Config.Seed)
 	state := newPoolState(opts.Program)
-	writer := newRunWriter(opts.RunDir)
+	writer := newRunWriter(opts.RunDir, opts.LogTraces)
 	if err := writer.init(); err != nil {
 		return Result{}, err
 	}
@@ -94,19 +94,34 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		}
 
 		// Reflectively update the module prompt from feedback + traces (Alg. 1, lines 10-12).
-		proposalOut, err := proposeReflection(ctx, opts.Reflector, ReflectionRequest{
+		reflectionReq := ReflectionRequest{
 			Candidate:    parentPrompts,
 			ParentID:     parentID,
 			ModuleName:   moduleName,
 			BatchIndices: batchIndices,
 			Examples:     batch,
 			Results:      parentEval.Results,
-		})
+		}
+		proposalOut, err := proposeReflection(ctx, opts.Reflector, reflectionReq)
 		if err != nil {
 			return Result{}, err
 		}
 		if proposalOut.Failed {
 			if err := writer.proposalFailed(state, parentID, moduleName, batchIndices, proposalOut.Reason); err != nil {
+				return Result{}, err
+			}
+			if err := writer.writeProposalTrace(state, trajectoryRecord{
+				ParentID:        parentID,
+				ParentIDs:       []int{parentID},
+				ProposalKind:    proposalReflection,
+				MutatedModule:   moduleName,
+				BatchIndices:    append([]int(nil), batchIndices...),
+				Accepted:        false,
+				Reason:          proposalOut.Reason,
+				ParentPrompt:    parentPrompts[moduleName],
+				RawResponseText: proposalOut.RawResponseText,
+				Examples:        traceExamples(batch, parentEval.Results),
+			}); err != nil {
 				return Result{}, err
 			}
 			bumpIteration(&state)
@@ -128,6 +143,24 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		// This is the only acceptance test; the full-train eval below does not gate.
 		if !strictlyImproves(parentEval.Mean, proposalEval.Mean) {
 			if err := writer.proposalRejected(state, parentID, moduleName, batchIndices, parentEval.Mean, proposalEval.Mean); err != nil {
+				return Result{}, err
+			}
+			if err := writer.writeProposalTrace(state, trajectoryRecord{
+				ParentID:             parentID,
+				ParentIDs:            []int{parentID},
+				ProposalKind:         proposalReflection,
+				MutatedModule:        moduleName,
+				BatchIndices:         append([]int(nil), batchIndices...),
+				Accepted:             false,
+				Reason:               rejectReasonNoImprovement,
+				ParentMean:           &parentEval.Mean,
+				ProposalMean:         &proposalEval.Mean,
+				ParentPrompt:         parentPrompts[moduleName],
+				ProposedPrompt:       proposal[moduleName],
+				RawResponseText:      proposalOut.RawResponseText,
+				ExtractedInstruction: proposalOut.Instruction,
+				Examples:             traceExamples(batch, proposalEval.Results),
+			}); err != nil {
 				return Result{}, err
 			}
 			bumpIteration(&state)
@@ -158,6 +191,23 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 		if err := writer.persistAcceptedCandidate(state, newID, parentEval.Mean, proposalEval.Mean, parentID, moduleName, batchIndices); err != nil {
+			return Result{}, err
+		}
+		if err := writer.writeProposalTrace(state, trajectoryRecord{
+			ParentID:             parentID,
+			ParentIDs:            []int{parentID},
+			ProposalKind:         proposalReflection,
+			MutatedModule:        moduleName,
+			BatchIndices:         append([]int(nil), batchIndices...),
+			Accepted:             true,
+			ParentMean:           &parentEval.Mean,
+			ProposalMean:         &proposalEval.Mean,
+			ParentPrompt:         parentPrompts[moduleName],
+			ProposedPrompt:       proposal[moduleName],
+			RawResponseText:      proposalOut.RawResponseText,
+			ExtractedInstruction: proposalOut.Instruction,
+			Examples:             traceExamples(batch, proposalEval.Results),
+		}); err != nil {
 			return Result{}, err
 		}
 		bumpIteration(&state)
@@ -193,6 +243,25 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	return result, nil
+}
+
+func traceExamples(examples []program.Example, results []ExampleResult) []trajectoryExample {
+	n := len(examples)
+	if len(results) < n {
+		n = len(results)
+	}
+	out := make([]trajectoryExample, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, trajectoryExample{
+			Input:    examples[i].Input,
+			Expected: examples[i].Expected,
+			Output:   results[i].Output,
+			Score:    results[i].Score,
+			Feedback: results[i].Feedback,
+			Error:    results[i].Error,
+		})
+	}
+	return out
 }
 
 func withDefaults(opts Options) Options {

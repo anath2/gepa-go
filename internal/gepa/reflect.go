@@ -29,6 +29,15 @@ type Reflector interface {
 	Propose(ctx context.Context, req ReflectionRequest) (string, error)
 }
 
+type proposalTrace struct {
+	Instruction     string
+	RawResponseText string
+}
+
+type traceableReflector interface {
+	ProposeWithTrace(ctx context.Context, req ReflectionRequest) (proposalTrace, error)
+}
+
 type defaultReflector struct{}
 
 func (defaultReflector) Propose(context.Context, ReflectionRequest) (string, error) {
@@ -36,6 +45,17 @@ func (defaultReflector) Propose(context.Context, ReflectionRequest) (string, err
 }
 
 func proposeReflection(ctx context.Context, reflector Reflector, req ReflectionRequest) (proposalOutcome, error) {
+	if traced, ok := reflector.(traceableReflector); ok {
+		p, err := traced.ProposeWithTrace(ctx, req)
+		if err != nil {
+			return proposalOutcome{Failed: true, Reason: err.Error()}, nil
+		}
+		if strings.TrimSpace(p.Instruction) == "" {
+			return proposalOutcome{Failed: true, Reason: "empty reflected instruction", RawResponseText: p.RawResponseText}, nil
+		}
+		return proposalOutcome{Instruction: p.Instruction, RawResponseText: p.RawResponseText}, nil
+	}
+
 	instruction, err := reflector.Propose(ctx, req)
 	if err != nil {
 		return proposalOutcome{Failed: true, Reason: err.Error()}, nil
@@ -60,19 +80,30 @@ func NewReflectionProposer(model ReflectionModel) *ReflectionProposer {
 // Propose renders the reflection meta-prompt, calls the LLM, and extracts
 // the new instruction from the first triple-backtick block.
 func (rp *ReflectionProposer) Propose(ctx context.Context, req ReflectionRequest) (string, error) {
+	trace, err := rp.ProposeWithTrace(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return trace.Instruction, nil
+}
+
+func (rp *ReflectionProposer) ProposeWithTrace(ctx context.Context, req ReflectionRequest) (proposalTrace, error) {
 	prompt, err := renderReflectionPrompt(req)
 	if err != nil {
-		return "", fmt.Errorf("reflection prompt: %w", err)
+		return proposalTrace{}, fmt.Errorf("reflection prompt: %w", err)
 	}
 	text, err := rp.model.Generate(ctx, prompt)
 	if err != nil {
-		return "", fmt.Errorf("reflection generate: %w", err)
+		return proposalTrace{}, fmt.Errorf("reflection generate: %w", err)
 	}
 	instruction, err := extractInstructionBlock(text)
 	if err != nil {
-		return "", fmt.Errorf("reflection extract: %w", err)
+		return proposalTrace{}, fmt.Errorf("reflection extract: %w", err)
 	}
-	return instruction, nil
+	return proposalTrace{
+		Instruction:     instruction,
+		RawResponseText: text,
+	}, nil
 }
 
 func renderReflectionPrompt(req ReflectionRequest) (string, error) {

@@ -60,12 +60,13 @@ type inspectResultRec struct {
 }
 
 type inspectSummary struct {
-	Iteration     int      `json:"iteration"`
-	MetricCalls   int      `json:"metric_calls"`
-	BestCandidate int      `json:"best_candidate"`
-	TrainMean     *float64 `json:"train_mean,omitempty"`
-	ValidationMean *float64 `json:"validation_mean,omitempty"`
-	ValidationSkipped string `json:"validation_skipped,omitempty"`
+	Iteration         int      `json:"iteration"`
+	MetricCalls       int      `json:"metric_calls"`
+	BestCandidate     int      `json:"best_candidate"`
+	TrajectoryFiles   int      `json:"trajectory_files,omitempty"`
+	TrainMean         *float64 `json:"train_mean,omitempty"`
+	ValidationMean    *float64 `json:"validation_mean,omitempty"`
+	ValidationSkipped string   `json:"validation_skipped,omitempty"`
 }
 
 type inspectCandidate struct {
@@ -188,6 +189,11 @@ func loadInspectReport(runDir string, showTree, showEvents bool) (inspectReport,
 		MetricCalls:   state.MetricCalls,
 		BestCandidate: state.BestCandidate,
 	}
+	if entries, err := os.ReadDir(filepath.Join(runDir, "trajectories")); err == nil {
+		summary.TrajectoryFiles = len(entries)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return inspectReport{}, fmt.Errorf("read trajectories: %w", err)
+	}
 	if result != nil {
 		trainMean := result.TrainMean
 		summary.TrainMean = &trainMean
@@ -294,6 +300,9 @@ func renderInspectText(w io.Writer, report inspectReport, showTree, showEvents b
 	fmt.Fprintf(w, "run: %s\n", report.RunDir)
 	fmt.Fprintf(w, "iteration=%d metric_calls=%d best_candidate=%d",
 		s.Iteration, s.MetricCalls, s.BestCandidate)
+	if s.TrajectoryFiles > 0 {
+		fmt.Fprintf(w, " trajectories=%d", s.TrajectoryFiles)
+	}
 	if s.TrainMean != nil {
 		fmt.Fprintf(w, " train_mean=%g", *s.TrainMean)
 	}
@@ -303,6 +312,9 @@ func renderInspectText(w io.Writer, report inspectReport, showTree, showEvents b
 	}
 	if s.ValidationSkipped != "" {
 		fmt.Fprintf(w, "validation_skipped: %s\n", s.ValidationSkipped)
+	}
+	if s.TrajectoryFiles > 0 {
+		fmt.Fprintf(w, "trajectories_hint: ls %s/trajectories\n", report.RunDir)
 	}
 
 	if showTree && len(report.Candidates) > 0 {

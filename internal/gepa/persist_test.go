@@ -25,6 +25,9 @@ func TestNewRunArtifacts_StandardPaths(t *testing.T) {
 	if paths.CandidatesDir != filepath.Join(runDir, "candidates") {
 		t.Fatalf("CandidatesDir = %q", paths.CandidatesDir)
 	}
+	if paths.TrajectoriesDir != filepath.Join(runDir, "trajectories") {
+		t.Fatalf("TrajectoriesDir = %q", paths.TrajectoriesDir)
+	}
 	if paths.ResultPath != filepath.Join(runDir, "result.json") {
 		t.Fatalf("ResultPath = %q", paths.ResultPath)
 	}
@@ -32,7 +35,7 @@ func TestNewRunArtifacts_StandardPaths(t *testing.T) {
 
 func TestEnsureRunDir_CreatesRunAndCandidatesDirs(t *testing.T) {
 	paths := newRunArtifacts(filepath.Join(t.TempDir(), "run"))
-	if err := ensureRunDir(paths); err != nil {
+	if err := ensureRunDir(paths, false); err != nil {
 		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 	for _, dir := range []string{paths.RunDir, paths.CandidatesDir} {
@@ -46,9 +49,23 @@ func TestEnsureRunDir_CreatesRunAndCandidatesDirs(t *testing.T) {
 	}
 }
 
+func TestEnsureRunDir_CreatesTrajectoriesDirWhenEnabled(t *testing.T) {
+	paths := newRunArtifacts(filepath.Join(t.TempDir(), "run"))
+	if err := ensureRunDir(paths, true); err != nil {
+		t.Fatalf("ensureRunDir() unexpected error: %v", err)
+	}
+	info, err := os.Stat(paths.TrajectoriesDir)
+	if err != nil {
+		t.Fatalf("Stat(%q) error: %v", paths.TrajectoriesDir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q is not a directory", paths.TrajectoriesDir)
+	}
+}
+
 func TestWriteState_WritesValidJSON(t *testing.T) {
 	paths := newRunArtifacts(t.TempDir())
-	if err := ensureRunDir(paths); err != nil {
+	if err := ensureRunDir(paths, false); err != nil {
 		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 
@@ -79,7 +96,7 @@ func TestWriteState_WritesValidJSON(t *testing.T) {
 
 func TestWriteState_OverwritesExisting(t *testing.T) {
 	paths := newRunArtifacts(t.TempDir())
-	if err := ensureRunDir(paths); err != nil {
+	if err := ensureRunDir(paths, false); err != nil {
 		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 	if err := writeState(paths, poolState{Iteration: 1, MetricCalls: 1, BestCandidate: 0, Candidates: []candidateRecord{{ID: 0}}, TrainScores: [][]float64{{0}}}); err != nil {
@@ -159,7 +176,7 @@ func TestAppendEvent_AppendsMultipleLines(t *testing.T) {
 
 func TestWriteCandidate_ZeroPaddedFilename(t *testing.T) {
 	paths := newRunArtifacts(t.TempDir())
-	if err := ensureRunDir(paths); err != nil {
+	if err := ensureRunDir(paths, false); err != nil {
 		t.Fatalf("ensureRunDir() unexpected error: %v", err)
 	}
 
@@ -224,7 +241,7 @@ func readJSONFile(path string, v any) error {
 
 func TestRunWriter_ProposalEvents(t *testing.T) {
 	runDir := t.TempDir()
-	writer := newRunWriter(runDir)
+	writer := newRunWriter(runDir, false)
 	if err := writer.init(); err != nil {
 		t.Fatalf("init() unexpected error: %v", err)
 	}
