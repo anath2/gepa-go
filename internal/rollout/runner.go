@@ -55,6 +55,7 @@ func (e Evaluator) Evaluate(ctx context.Context, candidate gepa.Candidate, examp
 func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate, example program.Example) (gepa.ExampleResult, error) {
 	state := cloneMap(example.Input)
 	var finalOutput map[string]any
+	traces := make([]gepa.ModuleTrace, 0, len(e.Program.Modules))
 
 	for _, module := range e.Program.Modules {
 		instruction, ok := candidate[module.Name]
@@ -65,6 +66,10 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 		if err != nil {
 			return gepa.ExampleResult{}, err
 		}
+		trace := gepa.ModuleTrace{
+			ModuleName: module.Name,
+			Input:      cloneMap(moduleInput),
+		}
 		resp, err := e.Model.Generate(ctx, ModuleRequest{
 			ModuleName:   module.Name,
 			Instruction:  instruction,
@@ -73,10 +78,13 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 		})
 		if err != nil {
 			if errors.Is(err, errDecodeModuleOutput) {
+				trace.Error = err.Error()
+				traces = append(traces, trace)
 				return gepa.ExampleResult{
-					Score:    0,
-					Feedback: fmt.Sprintf("module %s output decode failed: %v", module.Name, err),
-					Error:    err.Error(),
+					Score:        0,
+					Feedback:     fmt.Sprintf("module %s output decode failed: %v", module.Name, err),
+					Error:        err.Error(),
+					ModuleTraces: traces,
 				}, nil
 			}
 			return gepa.ExampleResult{}, err
@@ -84,21 +92,28 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 		if resp.Output == nil {
 			resp.Output = map[string]any{}
 		}
+		trace.Output = cloneMap(resp.Output)
 		if err := module.OutputSchema.Validate(resp.Output, "output"); err != nil {
+			trace.Error = err.Error()
+			traces = append(traces, trace)
 			return gepa.ExampleResult{
-				Score:    0,
-				Feedback: fmt.Sprintf("module %s output invalid: %v", module.Name, err),
-				Output:   resp.Output,
-				Error:    err.Error(),
+				Score:        0,
+				Feedback:     fmt.Sprintf("module %s output invalid: %v", module.Name, err),
+				Output:       resp.Output,
+				Error:        err.Error(),
+				ModuleTraces: traces,
 			}, nil
 		}
+		traces = append(traces, trace)
 		for k, v := range resp.Output {
 			state[k] = v
 		}
 		finalOutput = resp.Output
 	}
 
-	return scoreExactMatch(finalOutput, example.Expected, e.Config.Metric.Field), nil
+	result := scoreExactMatch(finalOutput, example.Expected, e.Config.Metric.Field)
+	result.ModuleTraces = traces
+	return result, nil
 }
 
 func projectInput(state map[string]any, schema program.Schema) (map[string]any, error) {

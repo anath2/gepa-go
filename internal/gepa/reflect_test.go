@@ -267,6 +267,58 @@ func TestRenderReflectionPromptIncludesSelectedModuleSchemas(t *testing.T) {
 	}
 }
 
+func TestRenderReflectionPromptIncludesSelectedModuleTrace(t *testing.T) {
+	prompt, err := renderReflectionPrompt(ReflectionRequest{
+		Candidate:  Candidate{"retriever": "Extract concise supporting snippets from the provided document."},
+		ParentID:   0,
+		ModuleName: "retriever",
+		Module: program.Module{
+			Name:         "retriever",
+			InputSchema:  program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{"question": {Kind: program.KindString}, "document": {Kind: program.KindString}}},
+			OutputSchema: program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{"snippets": {Kind: program.KindList, Item: &program.Schema{Kind: program.KindString}}}},
+		},
+		Examples: []program.Example{{
+			Input:    map[string]any{"question": "Who wrote Hamlet?", "document": "Hamlet was written by William Shakespeare."},
+			Expected: map[string]any{"answer": "William Shakespeare"},
+		}},
+		Results: []ExampleResult{{
+			Score:    0,
+			Feedback: "final answer did not cite the author",
+			Output:   map[string]any{"answer": "unknown"},
+			ModuleTraces: []ModuleTrace{
+				{
+					ModuleName: "retriever",
+					Input:      map[string]any{"question": "Who wrote Hamlet?", "document": "Hamlet was written by William Shakespeare."},
+					Output:     map[string]any{"snippets": []any{"Hamlet was written by William Shakespeare."}},
+				},
+				{
+					ModuleName: "answerer",
+					Input:      map[string]any{"question": "Who wrote Hamlet?", "snippets": []any{"Hamlet was written by William Shakespeare."}},
+					Output:     map[string]any{"answer": "unknown"},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("renderReflectionPrompt() unexpected error: %v", err)
+	}
+
+	for _, want := range []string{
+		"Selected module rollout trace:",
+		"Selected module input:",
+		"Selected module output:",
+		`"document": "Hamlet was written by William Shakespeare."`,
+		`"snippets"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("rendered prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "answerer") {
+		t.Fatalf("rendered prompt included non-selected module trace\n--- prompt ---\n%s", prompt)
+	}
+}
+
 func TestRenderReflectionPromptRequiresCurrentModuleInstruction(t *testing.T) {
 	_, err := renderReflectionPrompt(ReflectionRequest{
 		Candidate:  Candidate{"retriever": "Retrieve supporting context."},

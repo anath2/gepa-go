@@ -88,7 +88,7 @@ func TestEvaluatorMultiModuleAccumulatesState(t *testing.T) {
 		Model:  model,
 	}
 
-	_, err := eval.Evaluate(context.Background(), gepa.Candidate{
+	results, err := eval.Evaluate(context.Background(), gepa.Candidate{
 		"retriever": "retrieve",
 		"answerer":  "answer",
 	}, []program.Example{
@@ -103,6 +103,31 @@ func TestEvaluatorMultiModuleAccumulatesState(t *testing.T) {
 	second := model.requests[1]
 	if got := second.Input["docs"]; got != "from retriever" {
 		t.Fatalf("second Input.docs = %#v, want %#v", got, "from retriever")
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	traces := results[0].ModuleTraces
+	if len(traces) != 2 {
+		t.Fatalf("len(ModuleTraces) = %d, want 2", len(traces))
+	}
+	if traces[0].ModuleName != "retriever" {
+		t.Fatalf("first trace module = %q, want retriever", traces[0].ModuleName)
+	}
+	if traces[0].Input["question"] != "q1" {
+		t.Fatalf("first trace input question = %#v, want q1", traces[0].Input["question"])
+	}
+	if traces[0].Output["docs"] != "from retriever" {
+		t.Fatalf("first trace output docs = %#v, want from retriever", traces[0].Output["docs"])
+	}
+	if traces[1].ModuleName != "answerer" {
+		t.Fatalf("second trace module = %q, want answerer", traces[1].ModuleName)
+	}
+	if traces[1].Input["docs"] != "from retriever" {
+		t.Fatalf("second trace input docs = %#v, want from retriever", traces[1].Input["docs"])
+	}
+	if traces[1].Output["answer"] != "final answer" {
+		t.Fatalf("second trace output answer = %#v, want final answer", traces[1].Output["answer"])
 	}
 }
 

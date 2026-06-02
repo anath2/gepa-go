@@ -158,11 +158,36 @@ func renderReflectionPrompt(req ReflectionRequest) (string, error) {
 		fmt.Fprintf(&b, "Input:\n%s\n", input)
 		fmt.Fprintf(&b, "Expected:\n%s\n", expected)
 		fmt.Fprintf(&b, "Output:\n%s\n", output)
+		if trace, ok := selectedModuleTrace(req.Results[i], req.ModuleName); ok {
+			traceInput, err := prettyJSON(trace.Input)
+			if err != nil {
+				return "", fmt.Errorf("%w: result %d module trace input: %v", errReflectionPromptInvalid, i, err)
+			}
+			traceOutput, err := prettyJSON(trace.Output)
+			if err != nil {
+				return "", fmt.Errorf("%w: result %d module trace output: %v", errReflectionPromptInvalid, i, err)
+			}
+			fmt.Fprintf(&b, "Selected module rollout trace:\n")
+			fmt.Fprintf(&b, "Selected module input:\n%s\n", traceInput)
+			fmt.Fprintf(&b, "Selected module output:\n%s\n", traceOutput)
+			if trace.Error != "" {
+				fmt.Fprintf(&b, "Selected module error: %s\n", trace.Error)
+			}
+		}
 		fmt.Fprintf(&b, "Score: %.6g\n", req.Results[i].Score)
 		fmt.Fprintf(&b, "Feedback: %s\n\n", req.Results[i].Feedback)
 	}
 
 	return b.String(), nil
+}
+
+func selectedModuleTrace(result ExampleResult, moduleName string) (ModuleTrace, bool) {
+	for _, trace := range result.ModuleTraces {
+		if trace.ModuleName == moduleName {
+			return trace, true
+		}
+	}
+	return ModuleTrace{}, false
 }
 
 func extractInstructionBlock(text string) (string, error) {
