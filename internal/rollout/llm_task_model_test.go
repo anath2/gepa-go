@@ -16,7 +16,7 @@ import (
 func TestLLMTaskModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
 	t.Setenv("API_KEY", "test-key")
 
-	var gotReq llm.ChatRequest
+	var gotReq map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -31,7 +31,7 @@ func TestLLMTaskModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
 
-	model := NewLLMTaskModel(llm.Model{Name: "task-model", Client: client})
+	model := NewLLMTaskModel(llm.Model{Name: "task-model", Client: client, ReasoningEffort: "none"})
 	resp, err := model.Generate(context.Background(), ModuleRequest{
 		ModuleName:  "answer",
 		Instruction: "Answer the question.",
@@ -50,11 +50,18 @@ func TestLLMTaskModelUsesStructuredOutputAndParsesJSON(t *testing.T) {
 	if resp.Output["answer"] != "Paris" {
 		t.Fatalf("Output.answer = %#v, want Paris", resp.Output["answer"])
 	}
-	if gotReq.Model != "task-model" {
-		t.Fatalf("request model = %q, want task-model", gotReq.Model)
+	if gotReq["model"] != "task-model" {
+		t.Fatalf("request model = %q, want task-model", gotReq["model"])
 	}
-	if gotReq.ResponseFormat == nil {
+	if gotReq["response_format"] == nil {
 		t.Fatal("ResponseFormat = nil, want json_schema")
+	}
+	reasoning, ok := gotReq["reasoning"].(map[string]any)
+	if !ok {
+		t.Fatalf("reasoning = %#v, want object", gotReq["reasoning"])
+	}
+	if reasoning["effort"] != "none" {
+		t.Fatalf("reasoning.effort = %#v, want none", reasoning["effort"])
 	}
 }
 

@@ -7,8 +7,9 @@ type ChatCompleter interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 }
 
-// Model binds a model name to a chat completion client.
+// Model binds a model name and optional provider controls to a chat completion client.
 type Model struct {
-	Name   string
-	Client ChatCompleter
+	Name            string
+	ReasoningEffort string
+	Client          ChatCompleter
 }

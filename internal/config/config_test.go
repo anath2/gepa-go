@@ -63,6 +63,36 @@ func TestLoadConfigOK(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReasoningEffortPerModel(t *testing.T) {
+	path := writeConfig(t, `{
+		"budget": 200, "seed": 42,
+		"reflection_model": "x", "task_model": "y",
+		"reflection_reasoning_effort": "none",
+		"task_reasoning_effort": "minimal",
+		"metric": {"kind": "exact_match", "field": "answer"}
+	}`)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.ReflectionReasoningEffort != "none" {
+		t.Fatalf("ReflectionReasoningEffort = %q, want none", c.ReflectionReasoningEffort)
+	}
+	if c.TaskReasoningEffort != "minimal" {
+		t.Fatalf("TaskReasoningEffort = %q, want minimal", c.TaskReasoningEffort)
+	}
+}
+
+func TestValidateRejectsInvalidReasoningEffort(t *testing.T) {
+	c := validConfig()
+	c.TaskReasoningEffort = "disabled"
+	err := c.validate()
+	want := `config.json: task_reasoning_effort: must be one of "xhigh", "high", "medium", "low", "minimal", "none", got "disabled"`
+	if err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
+	}
+}
+
 func TestLoadConfigUnknownField(t *testing.T) {
 	path := writeConfig(t, `{"budget":1,"surprise":2}`)
 	_, err := Load(path)

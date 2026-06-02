@@ -13,7 +13,7 @@ import (
 func TestLLMReflectionModelUsesBoundModelName(t *testing.T) {
 	t.Setenv("API_KEY", "test-key")
 
-	var gotReq llm.ChatRequest
+	var gotReq map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -36,7 +36,7 @@ func TestLLMReflectionModelUsesBoundModelName(t *testing.T) {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
 
-	model := NewLLMReflectionModel(llm.Model{Name: "reflection-model", Client: client})
+	model := NewLLMReflectionModel(llm.Model{Name: "reflection-model", Client: client, ReasoningEffort: "none"})
 	got, err := model.Generate(context.Background(), "improve this prompt")
 	if err != nil {
 		t.Fatalf("Generate() unexpected error: %v", err)
@@ -44,7 +44,14 @@ func TestLLMReflectionModelUsesBoundModelName(t *testing.T) {
 	if got != "```\nImproved prompt.\n```" {
 		t.Fatalf("Generate() = %q, want raw model content", got)
 	}
-	if gotReq.Model != "reflection-model" {
-		t.Fatalf("request model = %q, want reflection-model", gotReq.Model)
+	if gotReq["model"] != "reflection-model" {
+		t.Fatalf("request model = %q, want reflection-model", gotReq["model"])
+	}
+	reasoning, ok := gotReq["reasoning"].(map[string]any)
+	if !ok {
+		t.Fatalf("reasoning = %#v, want object", gotReq["reasoning"])
+	}
+	if reasoning["effort"] != "none" {
+		t.Fatalf("reasoning.effort = %#v, want none", reasoning["effort"])
 	}
 }

@@ -11,15 +11,17 @@ import (
 // Config holds GEPA optimizer configuration. Concerns "how to run" — budget,
 // models, metric, RNG seed — not "what to optimize" (that's Program).
 type Config struct {
-	Budget              int    `json:"budget"`
-	MinibatchSize       int    `json:"minibatch_size,omitempty"`
-	DefaultMaxToolSteps int    `json:"default_max_tool_steps,omitempty"`
-	Seed                int64  `json:"seed"`
-	ReflectionModel     string `json:"reflection_model"`
-	TaskModel           string `json:"task_model"`
-	Metric              Metric `json:"metric"`
-	LogDir              string `json:"log_dir,omitempty"`
-	LogTraces           bool   `json:"log_traces,omitempty"`
+	Budget                    int    `json:"budget"`
+	MinibatchSize             int    `json:"minibatch_size,omitempty"`
+	DefaultMaxToolSteps       int    `json:"default_max_tool_steps,omitempty"`
+	Seed                      int64  `json:"seed"`
+	ReflectionModel           string `json:"reflection_model"`
+	ReflectionReasoningEffort string `json:"reflection_reasoning_effort,omitempty"`
+	TaskModel                 string `json:"task_model"`
+	TaskReasoningEffort       string `json:"task_reasoning_effort,omitempty"`
+	Metric                    Metric `json:"metric"`
+	LogDir                    string `json:"log_dir,omitempty"`
+	LogTraces                 bool   `json:"log_traces,omitempty"`
 
 	file string
 }
@@ -91,6 +93,12 @@ func (c Config) validate() error {
 	if c.TaskModel == "" {
 		return fmt.Errorf("%s: task_model: required", file)
 	}
+	if err := validateReasoningEffort(file, "reflection_reasoning_effort", c.ReflectionReasoningEffort); err != nil {
+		return err
+	}
+	if err := validateReasoningEffort(file, "task_reasoning_effort", c.TaskReasoningEffort); err != nil {
+		return err
+	}
 	if c.Metric.Kind != "exact_match" {
 		return fmt.Errorf("%s: metric.kind: only \"exact_match\" supported in v0, got %q", file, c.Metric.Kind)
 	}
@@ -98,6 +106,18 @@ func (c Config) validate() error {
 		return fmt.Errorf("%s: metric.field: required", file)
 	}
 	return nil
+}
+
+func validateReasoningEffort(file, field, value string) error {
+	if value == "" {
+		return nil
+	}
+	switch value {
+	case "xhigh", "high", "medium", "low", "minimal", "none":
+		return nil
+	default:
+		return fmt.Errorf("%s: %s: must be one of \"xhigh\", \"high\", \"medium\", \"low\", \"minimal\", \"none\", got %q", file, field, value)
+	}
 }
 
 // ValidateAgainstProgram cross-checks that the metric reads a string field

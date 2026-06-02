@@ -10,7 +10,10 @@ import (
 	"github.com/anath2/gepa-go/internal/llm"
 )
 
-var errEmptyChatResponse = errors.New("rollout: chat response has no choices")
+var (
+	errEmptyChatResponse  = errors.New("rollout: chat response has no choices")
+	errDecodeModuleOutput = errors.New("rollout: decode module output")
+)
 
 type llmTaskModel struct {
 	model llm.Model
@@ -41,6 +44,9 @@ func (m llmTaskModel) Generate(ctx context.Context, req ModuleRequest) (ModuleRe
 			{Role: "user", Content: prompt},
 		},
 	}
+	if m.model.ReasoningEffort != "" {
+		chatReq.Reasoning = map[string]any{"effort": m.model.ReasoningEffort}
+	}
 	if req.OutputSchema != nil {
 		chatReq.ResponseFormat = map[string]any{
 			"type": "json_schema",
@@ -63,7 +69,7 @@ func (m llmTaskModel) Generate(ctx context.Context, req ModuleRequest) (ModuleRe
 	content := strings.TrimSpace(resp.Choices[0].Message.Content)
 	var output map[string]any
 	if err := json.Unmarshal([]byte(content), &output); err != nil {
-		return ModuleResponse{}, fmt.Errorf("rollout: decode module output: %w", err)
+		return ModuleResponse{}, fmt.Errorf("%w: %w", errDecodeModuleOutput, err)
 	}
 	return ModuleResponse{Output: output}, nil
 }

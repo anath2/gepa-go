@@ -31,12 +31,17 @@ func (m llmReflectionModel) Generate(ctx context.Context, prompt string) (string
 		return "", err
 	}
 
-	resp, err := m.model.Client.Chat(ctx, llm.ChatRequest{
+	req := llm.ChatRequest{
 		Model: m.model.Name,
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
 		},
-	})
+	}
+	if m.model.ReasoningEffort != "" {
+		req.Reasoning = map[string]any{"effort": m.model.ReasoningEffort}
+	}
+
+	resp, err := m.model.Client.Chat(ctx, req)
 	if err != nil {
 		return "", err
 	}

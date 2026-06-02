@@ -3,8 +3,10 @@
   "minibatch_size": 3,
   "default_max_tool_steps": 8,
   "seed": 20260522,
-  "reflection_model": "~moonshotai/kimi-latest",
-  "task_model": "arcee-ai/trinity-mini",
+  "reflection_model": "google/gemma-4-26b-a4b-it",
+  "reflection_reasoning_effort": "none",
+  "task_model": "google/gemma-4-26b-a4b-it",
+  "task_reasoning_effort": "none",
   "metric": { "kind": "exact_match", "field": "entities_json" },
   "log_dir": "./runs/",
   "log_traces": true

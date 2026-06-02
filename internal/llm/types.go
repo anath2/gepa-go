@@ -36,6 +36,7 @@ type ChatRequest struct {
 	Temperature    *float64       `json:"temperature,omitempty"`
 	Tools          []Tool         `json:"tools,omitempty"`
 	ResponseFormat map[string]any `json:"response_format,omitempty"`
+	Reasoning      map[string]any `json:"reasoning,omitempty"`
 }
 
 type ChatResponse struct {

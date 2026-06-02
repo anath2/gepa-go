@@ -112,6 +112,11 @@ func newOptimizeCmd() *cobra.Command {
 			fmt.Fprintf(out, "program:  %d modules, %d tools\n", len(problem.Program.Modules), len(problem.Program.Tools))
 			fmt.Fprintf(out, "config:   budget=%d minibatch=%d seed=%d\n", problem.Config.Budget, problem.Config.MinibatchSize, problem.Config.Seed)
 			fmt.Fprintf(out, "models:   task=%s  reflection=%s\n", problem.Config.TaskModel, problem.Config.ReflectionModel)
+			if problem.Config.TaskReasoningEffort != "" || problem.Config.ReflectionReasoningEffort != "" {
+				fmt.Fprintf(out, "reasoning: task=%s  reflection=%s\n",
+					displayOptional(problem.Config.TaskReasoningEffort),
+					displayOptional(problem.Config.ReflectionReasoningEffort))
+			}
 			fmt.Fprintf(out, "metric:   %s on %q\n", problem.Config.Metric.Kind, problem.Config.Metric.Field)
 			fmt.Fprintf(out, "train:    %d examples\n", len(problem.Train))
 			fmt.Fprintf(out, "val:      %d examples\n", len(problem.Val))
@@ -158,6 +163,13 @@ func resolveRunID(flag string) string {
 		return flag
 	}
 	return time.Now().Format("20060102-150405")
+}
+
+func displayOptional(value string) string {
+	if value == "" {
+		return "default"
+	}
+	return value
 }
 
 // prepareRunDir creates <logDir>/<runID> and snapshots program.json and
@@ -208,8 +220,16 @@ func runOptimize(ctx context.Context, problem gepa.Problem, runDir string, logTr
 		return gepa.Result{}, err
 	}
 
-	taskModel := llm.Model{Name: problem.Config.TaskModel, Client: client}
-	reflectionModel := llm.Model{Name: problem.Config.ReflectionModel, Client: client}
+	taskModel := llm.Model{
+		Name:            problem.Config.TaskModel,
+		ReasoningEffort: problem.Config.TaskReasoningEffort,
+		Client:          client,
+	}
+	reflectionModel := llm.Model{
+		Name:            problem.Config.ReflectionModel,
+		ReasoningEffort: problem.Config.ReflectionReasoningEffort,
+		Client:          client,
+	}
 
 	evaluator := rollout.Evaluator{
 		Program: problem.Program,
