@@ -1,0 +1,20 @@
+{
+  "modules": [
+    {
+      "name": "answer",
+      "prompt": "Return a JSON object with exactly one field: answer. The answer value must be exactly the input text, unchanged.",
+      "input_schema": {
+        "type": "object",
+        "fields": {
+          "text": "string"
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "fields": {
+          "answer": "string"
+        }
+      }
+    }
+  ]
+}
