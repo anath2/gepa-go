@@ -259,12 +259,13 @@ func traceExamples(examples []program.Example, results []ExampleResult) []trajec
 	out := make([]trajectoryExample, 0, n)
 	for i := 0; i < n; i++ {
 		out = append(out, trajectoryExample{
-			Input:    examples[i].Input,
-			Expected: examples[i].Expected,
-			Output:   results[i].Output,
-			Score:    results[i].Score,
-			Feedback: results[i].Feedback,
-			Error:    results[i].Error,
+			Input:        examples[i].Input,
+			Expected:     examples[i].Expected,
+			Output:       results[i].Output,
+			Score:        results[i].Score,
+			Feedback:     results[i].Feedback,
+			Error:        results[i].Error,
+			ModuleTraces: results[i].ModuleTraces,
 		})
 	}
 	return out

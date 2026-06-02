@@ -170,12 +170,13 @@ func proposalEventContext(state poolState, parentID int, moduleName string, batc
 }
 
 type trajectoryExample struct {
-	Input    map[string]any `json:"input"`
-	Expected map[string]any `json:"expected"`
-	Output   map[string]any `json:"output,omitempty"`
-	Score    float64        `json:"score"`
-	Feedback string         `json:"feedback"`
-	Error    string         `json:"error,omitempty"`
+	Input        map[string]any `json:"input"`
+	Expected     map[string]any `json:"expected"`
+	Output       map[string]any `json:"output,omitempty"`
+	Score        float64        `json:"score"`
+	Feedback     string         `json:"feedback"`
+	Error        string         `json:"error,omitempty"`
+	ModuleTraces []ModuleTrace  `json:"module_traces,omitempty"`
 }
 
 type trajectoryRecord struct {

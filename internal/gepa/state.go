@@ -33,18 +33,26 @@ type candidateRecord struct {
 }
 
 type poolState struct {
-	Iteration     int                `json:"iteration"`
-	MetricCalls   int                `json:"metric_calls"`
-	Candidates    []candidateRecord  `json:"candidates"`
-	TrainScores   [][]float64        `json:"train_scores"`
-	BestCandidate int                `json:"best_candidate"`
+	Iteration     int               `json:"iteration"`
+	MetricCalls   int               `json:"metric_calls"`
+	Candidates    []candidateRecord `json:"candidates"`
+	TrainScores   [][]float64       `json:"train_scores"`
+	BestCandidate int               `json:"best_candidate"`
 }
 
 type ExampleResult struct {
-	Score    float64        `json:"score"`
-	Feedback string         `json:"feedback"`
-	Output   map[string]any `json:"output,omitempty"`
-	Error    string         `json:"error,omitempty"`
+	Score        float64        `json:"score"`
+	Feedback     string         `json:"feedback"`
+	Output       map[string]any `json:"output,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	ModuleTraces []ModuleTrace  `json:"module_traces,omitempty"`
+}
+
+type ModuleTrace struct {
+	ModuleName string         `json:"module_name"`
+	Input      map[string]any `json:"input,omitempty"`
+	Output     map[string]any `json:"output,omitempty"`
+	Error      string         `json:"error,omitempty"`
 }
 
 type eventRecord struct {
