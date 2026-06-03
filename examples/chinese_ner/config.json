@@ -1,5 +1,5 @@
 {
-  "budget": 24,
+  "budget": 96,
   "minibatch_size": 3,
   "default_max_tool_steps": 8,
   "seed": 20260522,
