@@ -113,6 +113,15 @@ func TestOptimizeRejectsNonPositiveMinibatchSize(t *testing.T) {
 	}
 }
 
+func TestMergeIterationsEnabledRequiresMultipleModules(t *testing.T) {
+	if mergeIterationsEnabled(singleModuleProgram()) {
+		t.Fatal("mergeIterationsEnabled(single module) = true, want false")
+	}
+	if !mergeIterationsEnabled(twoModuleProgram()) {
+		t.Fatal("mergeIterationsEnabled(two modules) = false, want true")
+	}
+}
+
 func TestDefaultReflectorReturnsStableNotImplementedError(t *testing.T) {
 	proposal, err := defaultReflector{}.Propose(context.Background(), ReflectionRequest{
 		Candidate:  Candidate{"answer": "prompt"},

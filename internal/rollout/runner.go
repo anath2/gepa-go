@@ -52,6 +52,7 @@ func (e Evaluator) Evaluate(ctx context.Context, candidate gepa.Candidate, examp
 	return out, nil
 }
 
+// TODO: Add a per example timeout and figure out how to handle when the upstream provider times out
 func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate, example program.Example) (gepa.ExampleResult, error) {
 	state := cloneMap(example.Input)
 	var finalOutput map[string]any

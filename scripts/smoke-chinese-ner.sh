@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Top-down smoke workflow: build gepa, run Chinese NER optimize, inspect the run.
+# Validates end-to-end optimizer health (artifacts, events, budget loop);
 # Requires project-root .env with API_KEY and BASE_URL (see .env.example).
 set -euo pipefail
 

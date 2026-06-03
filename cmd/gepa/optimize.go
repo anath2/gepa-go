@@ -94,7 +94,7 @@ func newOptimizeCmd() *cobra.Command {
 				if !info.IsDir() {
 					return fmt.Errorf("%s is not a directory", f.resume)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "resume: %s (snapshot reading deferred to Phase 3)\n", f.resume)
+				fmt.Fprintf(cmd.OutOrStdout(), "resume: %s (not implemented; deferred until after paper-parity work)\n", f.resume)
 				return nil
 			}
 

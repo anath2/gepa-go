@@ -15,6 +15,9 @@ const (
 	eventProposalEvaluated = "proposal_evaluated"
 	eventCandidateRejected = "candidate_rejected"
 	eventCandidateAccepted = "candidate_accepted"
+	eventMergeRequested    = "merge_requested"
+	eventMergeFailed       = "merge_failed"
+	eventMergeEvaluated    = "merge_evaluated"
 )
 
 const rejectReasonNoImprovement = "proposal did not strictly improve minibatch mean"
@@ -117,6 +120,69 @@ func (w *runWriter) proposalEvaluated(state poolState, parentID int, moduleName 
 	ev.ParentMean = &parentMean
 	ev.ProposalMean = &proposalMean
 	return w.appendRunEvent(ev)
+}
+
+func (w *runWriter) mergeRequested(state poolState, parentIDs []int, ancestor int, batchIndices []int) error {
+	ev := mergeEventContext(state, parentIDs, batchIndices)
+	ev.Type = eventMergeRequested
+	ev.Reason = fmt.Sprintf("ancestor=%d", ancestor)
+	return w.appendRunEvent(ev)
+}
+
+func (w *runWriter) mergeFailed(state poolState, parentIDs []int, batchIndices []int, reason string) error {
+	ev := mergeEventContext(state, parentIDs, batchIndices)
+	ev.Type = eventMergeFailed
+	ev.Reason = reason
+	return w.appendRunEvent(ev)
+}
+
+func (w *runWriter) mergeEvaluated(state poolState, parentIDs []int, batchIndices []int, parentMean, proposalMean float64) error {
+	ev := mergeEventContext(state, parentIDs, batchIndices)
+	ev.Type = eventMergeEvaluated
+	ev.ParentMean = &parentMean
+	ev.ProposalMean = &proposalMean
+	return w.appendRunEvent(ev)
+}
+
+func (w *runWriter) mergeRejected(state poolState, parentIDs []int, batchIndices []int, parentMean, proposalMean float64) error {
+	rejected := false
+	ev := mergeEventContext(state, parentIDs, batchIndices)
+	ev.Type = eventCandidateRejected
+	ev.ParentMean = &parentMean
+	ev.ProposalMean = &proposalMean
+	ev.Accepted = &rejected
+	ev.Reason = rejectReasonNoImprovement
+	return w.appendRunEvent(ev)
+}
+
+func (w *runWriter) persistAcceptedMerge(state poolState, id int, parentMean, proposalMean float64, parentIDs []int, batchIndices []int) error {
+	if !w.enabled {
+		return nil
+	}
+	if err := writeCandidate(w.paths, id, state.Candidates[id]); err != nil {
+		return err
+	}
+	if err := writeState(w.paths, state); err != nil {
+		return err
+	}
+	accepted := true
+	ev := mergeEventContext(state, parentIDs, batchIndices)
+	ev.Type = eventCandidateAccepted
+	ev.CandidateID = id
+	ev.ParentMean = &parentMean
+	ev.ProposalMean = &proposalMean
+	ev.Accepted = &accepted
+	return w.appendRunEvent(ev)
+}
+
+func mergeEventContext(state poolState, parentIDs []int, batchIndices []int) eventRecord {
+	return eventRecord{
+		Iteration:    state.Iteration,
+		MetricCalls:  state.MetricCalls,
+		ParentIDs:    append([]int(nil), parentIDs...),
+		ProposalKind: proposalMerge,
+		BatchIndices: append([]int(nil), batchIndices...),
+	}
 }
 
 func (w *runWriter) proposalRejected(state poolState, parentID int, moduleName string, batchIndices []int, parentMean, proposalMean float64) error {

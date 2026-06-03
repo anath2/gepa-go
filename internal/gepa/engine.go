@@ -55,11 +55,40 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 	minibatchSize := opts.Config.MinibatchSize
 	batchCost := minibatchCost(trainLen, minibatchSize)
 	selector := paretoSelector{}
+	mergeTracker := newMergeTracker()
+	mergeEnabled := mergeIterationsEnabled(opts.Program)
+	mergeDue := false
 
 	// Main budget loop (Alg. 1, line 6).
 	for iter := 0; ; iter++ {
 		if !hasBudget(state.MetricCalls, opts.Config.Budget, batchCost*2) {
 			break
+		}
+
+		if mergeEnabled && mergeDue {
+			mergeDue = false
+			handled, accepted, err := tryMergeIteration(ctx, mergeIterationParams{
+				state:         &state,
+				writer:        writer,
+				tracker:       mergeTracker,
+				evaluator:     opts.Evaluator,
+				train:         opts.Train,
+				trainLen:      trainLen,
+				minibatchSize: minibatchSize,
+				budget:        opts.Config.Budget,
+				rng:           rng,
+				iter:          iter,
+			})
+			if err != nil {
+				return Result{}, err
+			}
+			if handled {
+				if accepted {
+					mergeDue = true
+				}
+				bumpIteration(&state)
+				continue
+			}
 		}
 
 		// Select parent from the Pareto frontier (Alg. 1, line 7; Alg. 2).
@@ -196,6 +225,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 		if err := writer.persistAcceptedCandidate(state, newID, parentEval.Mean, proposalEval.Mean, parentID, moduleName, batchIndices); err != nil {
 			return Result{}, err
 		}
+		mergeDue = mergeEnabled
 		if err := writer.writeProposalTrace(state, trajectoryRecord{
 			ParentID:             parentID,
 			ParentIDs:            []int{parentID},
@@ -276,6 +306,11 @@ func withDefaults(opts Options) Options {
 		opts.Reflector = defaultReflector{}
 	}
 	return opts
+}
+
+// Merge should only be enabled if there are at least two modules.
+func mergeIterationsEnabled(prog program.Program) bool {
+	return len(prog.Modules) > 1
 }
 
 func validateOpts(opts Options) error {
