@@ -21,13 +21,19 @@ type Program struct {
 	file string
 }
 
+type ModuleEvaluator struct {
+	Kind    string   `json:"kind"`
+	Command []string `json:"command"`
+}
+
 type Module struct {
-	Name         string   `json:"name"`
-	Prompt       string   `json:"prompt"`
-	InputSchema  Schema   `json:"input_schema"`
-	OutputSchema Schema   `json:"output_schema"`
-	Tools        []string `json:"tools,omitempty"`
-	MaxToolSteps int      `json:"max_tool_steps,omitempty"`
+	Name         string           `json:"name"`
+	Prompt       string           `json:"prompt"`
+	InputSchema  Schema           `json:"input_schema"`
+	OutputSchema Schema           `json:"output_schema"`
+	Tools        []string         `json:"tools,omitempty"`
+	MaxToolSteps int              `json:"max_tool_steps,omitempty"`
+	Evaluator    *ModuleEvaluator `json:"evaluator,omitempty"`
 }
 
 type Tool struct {
@@ -109,6 +115,14 @@ func (p Program) validate() error {
 		for j, tname := range m.Tools {
 			if _, ok := p.Tools[tname]; !ok {
 				return fmt.Errorf("%s: modules[%d].tools[%d]: unknown tool %q", file, i, j, tname)
+			}
+		}
+		if m.Evaluator != nil {
+			if m.Evaluator.Kind != "external" {
+				return fmt.Errorf("%s: modules[%d].evaluator.kind: only \"external\" supported, got %q", file, i, m.Evaluator.Kind)
+			}
+			if len(m.Evaluator.Command) == 0 {
+				return fmt.Errorf("%s: modules[%d].evaluator.command: required, non-empty", file, i)
 			}
 		}
 	}
