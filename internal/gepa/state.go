@@ -48,11 +48,25 @@ type ExampleResult struct {
 	ModuleTraces []ModuleTrace  `json:"module_traces,omitempty"`
 }
 
+const (
+	EvalSourceDecode            = "decode"
+	EvalSourceSchema            = "schema"
+	EvalSourceExternalEvaluator = "external_evaluator"
+)
+
+type ModuleEvaluation struct {
+	Score    float64 `json:"score"`
+	Feedback string  `json:"feedback"`
+	Source   string  `json:"source"`
+	Error    string  `json:"error,omitempty"`
+}
+
 type ModuleTrace struct {
-	ModuleName string         `json:"module_name"`
-	Input      map[string]any `json:"input,omitempty"`
-	Output     map[string]any `json:"output,omitempty"`
-	Error      string         `json:"error,omitempty"`
+	ModuleName string            `json:"module_name"`
+	Input      map[string]any    `json:"input,omitempty"`
+	Output     map[string]any    `json:"output,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Evaluation *ModuleEvaluation `json:"evaluation,omitempty"`
 }
 
 type eventRecord struct {
