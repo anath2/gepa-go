@@ -52,10 +52,10 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	}
 	if trimmed[0] == '{' {
 		var aux struct {
-			Type   string             `json:"type"`
-			Item   *Schema            `json:"item,omitempty"`
-			Fields map[string]Schema  `json:"fields,omitempty"`
-			Extra  map[string]any     `json:"-"`
+			Type   string            `json:"type"`
+			Item   *Schema           `json:"item,omitempty"`
+			Fields map[string]Schema `json:"fields,omitempty"`
+			Extra  map[string]any    `json:"-"`
 		}
 		dec := json.NewDecoder(bytes.NewReader(trimmed))
 		dec.DisallowUnknownFields()

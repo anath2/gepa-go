@@ -121,16 +121,16 @@ func TestAppendEvent_WritesOneJSONPerLine(t *testing.T) {
 	parentMean := 0.25
 	proposalMean := 0.75
 	event := eventRecord{
-		Type:         "candidate_accepted",
-		Iteration:    1,
-		MetricCalls:  5,
-		CandidateID:  1,
-		ParentIDs:    []int{0},
-		ProposalKind: proposalReflection,
+		Type:          "candidate_accepted",
+		Iteration:     1,
+		MetricCalls:   5,
+		CandidateID:   1,
+		ParentIDs:     []int{0},
+		ProposalKind:  proposalReflection,
 		MutatedModule: "answer",
-		ParentMean:   &parentMean,
-		ProposalMean: &proposalMean,
-		Accepted:     &accepted,
+		ParentMean:    &parentMean,
+		ProposalMean:  &proposalMean,
+		Accepted:      &accepted,
 	}
 	if err := appendEvent(paths, event); err != nil {
 		t.Fatalf("appendEvent() unexpected error: %v", err)
@@ -210,9 +210,9 @@ func TestWriteResult_WritesValidJSON(t *testing.T) {
 	paths := newRunArtifacts(t.TempDir())
 	valMean := 0.9
 	result := Result{
-		BestCandidate: 1,
-		MetricCalls:   42,
-		TrainMean:     0.8,
+		BestCandidate:  1,
+		MetricCalls:    42,
+		TrainMean:      0.8,
 		ValidationMean: &valMean,
 	}
 	if err := writeResult(paths, result); err != nil {
