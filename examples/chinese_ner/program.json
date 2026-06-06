@@ -25,6 +25,10 @@
             }
           }
         }
+      },
+      "evaluator": {
+        "kind": "external",
+        "command": ["python3", "validate_segments.py"]
       }
     },
     {
