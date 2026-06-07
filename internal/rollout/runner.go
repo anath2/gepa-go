@@ -80,10 +80,12 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 		if err != nil {
 			if errors.Is(err, errDecodeModuleOutput) {
 				trace.Error = err.Error()
+				eval := decodeFailureEvaluation(module.Name, err)
+				trace.Evaluation = &eval
 				traces = append(traces, trace)
 				return gepa.ExampleResult{
 					Score:        0,
-					Feedback:     fmt.Sprintf("module %s output decode failed: %v", module.Name, err),
+					Feedback:     eval.Feedback,
 					Error:        err.Error(),
 					ModuleTraces: traces,
 				}, nil
@@ -96,15 +98,22 @@ func (e Evaluator) evaluateExample(ctx context.Context, candidate gepa.Candidate
 		trace.Output = cloneMap(resp.Output)
 		if err := module.OutputSchema.Validate(resp.Output, "output"); err != nil {
 			trace.Error = err.Error()
+			eval := schemaFailureEvaluation(module.Name, err)
+			trace.Evaluation = &eval
 			traces = append(traces, trace)
 			return gepa.ExampleResult{
 				Score:        0,
-				Feedback:     fmt.Sprintf("module %s output invalid: %v", module.Name, err),
+				Feedback:     eval.Feedback,
 				Output:       resp.Output,
 				Error:        err.Error(),
 				ModuleTraces: traces,
 			}, nil
 		}
+		moduleEval, err := runModuleEvaluator(ctx, module, moduleInput, resp.Output, example)
+		if err != nil {
+			return gepa.ExampleResult{}, err
+		}
+		trace.Evaluation = moduleEval
 		traces = append(traces, trace)
 		for k, v := range resp.Output {
 			state[k] = v

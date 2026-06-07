@@ -66,6 +66,79 @@ func TestEvaluateCandidate_PropagatesEvaluatorError(t *testing.T) {
 	}
 }
 
+func TestModuleScoreUsesEvaluationWhenPresent(t *testing.T) {
+	result := ExampleResult{
+		Score:    1,
+		Feedback: "global exact match",
+		ModuleTraces: []ModuleTrace{{
+			ModuleName: "mod",
+			Evaluation: &ModuleEvaluation{Score: 0.4, Feedback: "module feedback", Source: EvalSourceExternalEvaluator},
+		}},
+	}
+	got := moduleScore(result, "mod")
+	if got != 0.4 {
+		t.Fatalf("moduleScore() = %v, want 0.4", got)
+	}
+}
+
+func TestModuleScoreFallsBackToGlobalWhenNoEvaluation(t *testing.T) {
+	result := ExampleResult{
+		Score:    0.25,
+		Feedback: "global",
+		ModuleTraces: []ModuleTrace{{
+			ModuleName: "mod",
+		}},
+	}
+	got := moduleScore(result, "mod")
+	if got != 0.25 {
+		t.Fatalf("moduleScore() = %v, want 0.25", got)
+	}
+}
+
+func TestScoresForModuleExtractsPerExampleModuleScores(t *testing.T) {
+	results := []ExampleResult{
+		{
+			Score: 1,
+			ModuleTraces: []ModuleTrace{{
+				ModuleName: "mod",
+				Evaluation: &ModuleEvaluation{Score: 0.2, Source: EvalSourceExternalEvaluator},
+			}},
+		},
+		{
+			Score: 0,
+			ModuleTraces: []ModuleTrace{{
+				ModuleName: "mod",
+				Evaluation: &ModuleEvaluation{Score: 0.8, Source: EvalSourceExternalEvaluator},
+			}},
+		},
+	}
+	got := scoresForModule(results, "mod")
+	want := []float64{0.2, 0.8}
+	if len(got) != len(want) {
+		t.Fatalf("scoresForModule() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("scoresForModule()[%d] = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestModuleHasEvaluator(t *testing.T) {
+	prog := program.Program{
+		Modules: []program.Module{
+			{Name: "mod", Evaluator: &program.ModuleEvaluator{Kind: "external", Command: []string{"sh", "-c", "true"}}},
+			{Name: "other"},
+		},
+	}
+	if !moduleHasEvaluator(prog, "mod") {
+		t.Fatal("moduleHasEvaluator(mod) = false, want true")
+	}
+	if moduleHasEvaluator(prog, "other") {
+		t.Fatal("moduleHasEvaluator(other) = true, want false")
+	}
+}
+
 type fixedScoreEvaluator struct {
 	score float64
 }

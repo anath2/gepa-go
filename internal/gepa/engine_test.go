@@ -14,6 +14,209 @@ import (
 	"github.com/anath2/gepa-go/internal/program"
 )
 
+type fakeEvaluator struct{}
+
+func (fakeEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
+	return []ExampleResult{{Score: 1, Feedback: "ok"}}, nil
+}
+
+type scriptedEvaluator struct {
+	trainSize int
+	scoreFor  func(candidate Candidate, examples []program.Example) float64
+}
+
+func (e *scriptedEvaluator) Evaluate(_ context.Context, candidate Candidate, examples []program.Example) ([]ExampleResult, error) {
+	scoreFn := e.scoreFor
+	if scoreFn == nil {
+		scoreFn = func(Candidate, []program.Example) float64 { return 0 }
+	}
+	out := make([]ExampleResult, len(examples))
+	for i := range out {
+		out[i] = ExampleResult{Score: scoreFn(candidate, examples), Feedback: "ok"}
+	}
+	return out, nil
+}
+
+type badLengthEvaluator struct{}
+
+func (badLengthEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
+	return []ExampleResult{{Score: 1, Feedback: "ok"}}, nil
+}
+
+type moduleAwareEvaluator struct{}
+
+func (e *moduleAwareEvaluator) Evaluate(_ context.Context, candidate Candidate, examples []program.Example) ([]ExampleResult, error) {
+	out := make([]ExampleResult, len(examples))
+	for i := range out {
+		globalScore := 0.0
+		if candidate["answer"] == "answer v2" {
+			globalScore = 1
+		}
+		moduleScore := 0.0
+		if candidate["retriever"] == "retrieve v2" {
+			moduleScore = 1
+		} else if candidate["retriever"] == "retrieve context" {
+			moduleScore = 0.2
+		}
+		out[i] = ExampleResult{
+			Score:    globalScore,
+			Feedback: "global",
+			Output:   map[string]any{"answer": candidate["answer"]},
+			ModuleTraces: []ModuleTrace{
+				{
+					ModuleName: "retriever",
+					Evaluation: &ModuleEvaluation{
+						Score:    moduleScore,
+						Feedback: "module",
+						Source:   EvalSourceExternalEvaluator,
+					},
+				},
+				{ModuleName: "answer"},
+			},
+		}
+	}
+	return out, nil
+}
+
+type fakeReflector struct{}
+
+func (fakeReflector) Propose(context.Context, ReflectionRequest) (string, error) {
+	return "better prompt", nil
+}
+
+type scriptedReflector struct {
+	proposal string
+	err      error
+	modules  []string
+}
+
+func (r *scriptedReflector) Propose(_ context.Context, req ReflectionRequest) (string, error) {
+	r.modules = append(r.modules, req.ModuleName)
+	if r.err != nil {
+		return "", r.err
+	}
+	return r.proposal, nil
+}
+
+func validEngineConfig() config.Config {
+	return config.Config{
+		Budget:              100,
+		MinibatchSize:       3,
+		DefaultMaxToolSteps: 8,
+		Seed:                42,
+		ReflectionModel:     "test/reflection",
+		TaskModel:           "test/task",
+		Metric:              config.Metric{Kind: "exact_match", Field: "answer"},
+	}
+}
+
+func engineConfig(budget, minibatch int, seed int64) config.Config {
+	cfg := validEngineConfig()
+	cfg.Budget = budget
+	cfg.MinibatchSize = minibatch
+	cfg.Seed = seed
+	return cfg
+}
+
+func baseOpts(prog program.Program, train []program.Example, cfg config.Config) Options {
+	return Options{
+		Problem: Problem{
+			Program: prog,
+			Config:  cfg,
+			Train:   train,
+			Val:     []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}},
+		},
+	}
+}
+
+func singleModuleProgram() program.Program {
+	return program.Program{
+		Modules: []program.Module{{Name: "answer", Prompt: "answer seed"}},
+	}
+}
+
+func twoModuleProgram() program.Program {
+	return program.Program{
+		Modules: []program.Module{
+			{Name: "retriever", Prompt: "retrieve context"},
+			{Name: "answer", Prompt: "answer seed"},
+		},
+	}
+}
+
+func twoModuleProgramWithRetrieverEvaluator() program.Program {
+	return program.Program{
+		Modules: []program.Module{
+			{
+				Name:   "retriever",
+				Prompt: "retrieve context",
+				Evaluator: &program.ModuleEvaluator{
+					Kind:    "external",
+					Command: []string{"python", "eval.py"},
+				},
+			},
+			{Name: "answer", Prompt: "answer seed"},
+		},
+	}
+}
+
+func makeTrainExamples(n int) []program.Example {
+	out := make([]program.Example, n)
+	for i := range out {
+		out[i] = program.Example{
+			Input:    map[string]any{"question": "q"},
+			Expected: map[string]any{"answer": "a"},
+		}
+	}
+	return out
+}
+
+func assertFileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Stat(%q) error: %v", path, err)
+	}
+}
+
+func readEvents(t *testing.T, path string) ([]eventRecord, error) {
+	t.Helper()
+	lines, err := readJSONLLines(path)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]eventRecord, 0, len(lines))
+	for _, line := range lines {
+		var ev eventRecord
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	return events, nil
+}
+
+func containsEventType(events []eventRecord, typ string) bool {
+	_, ok := findEventType(events, typ)
+	return ok
+}
+
+func findEventType(events []eventRecord, typ string) (eventRecord, bool) {
+	for _, ev := range events {
+		if ev.Type == typ {
+			return ev, true
+		}
+	}
+	return eventRecord{}, false
+}
+
+func dirNames(entries []os.DirEntry) string {
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name()
+	}
+	return strings.Join(names, ", ")
+}
+
 func TestOptionsHoldsInputsAndDependencies(t *testing.T) {
 	prog := program.Program{Modules: []program.Module{{Name: "answer", Prompt: "answer"}}}
 	cfg := engineConfig(10, 3, 7)
@@ -546,150 +749,6 @@ func TestOptimizeUsesRoundRobinModuleSelection(t *testing.T) {
 	}
 }
 
-func validEngineConfig() config.Config {
-	return config.Config{
-		Budget:              100,
-		MinibatchSize:       3,
-		DefaultMaxToolSteps: 8,
-		Seed:                42,
-		ReflectionModel:     "test/reflection",
-		TaskModel:           "test/task",
-		Metric:              config.Metric{Kind: "exact_match", Field: "answer"},
-	}
-}
-
-func engineConfig(budget, minibatch int, seed int64) config.Config {
-	cfg := validEngineConfig()
-	cfg.Budget = budget
-	cfg.MinibatchSize = minibatch
-	cfg.Seed = seed
-	return cfg
-}
-
-func baseOpts(prog program.Program, train []program.Example, cfg config.Config) Options {
-	return Options{
-		Problem: Problem{
-			Program: prog,
-			Config:  cfg,
-			Train:   train,
-			Val:     []program.Example{{Input: map[string]any{"question": "vq"}, Expected: map[string]any{"answer": "va"}}},
-		},
-	}
-}
-
-func singleModuleProgram() program.Program {
-	return program.Program{
-		Modules: []program.Module{{Name: "answer", Prompt: "answer seed"}},
-	}
-}
-
-func twoModuleProgram() program.Program {
-	return program.Program{
-		Modules: []program.Module{
-			{Name: "retriever", Prompt: "retrieve context"},
-			{Name: "answer", Prompt: "answer seed"},
-		},
-	}
-}
-
-func makeTrainExamples(n int) []program.Example {
-	out := make([]program.Example, n)
-	for i := range out {
-		out[i] = program.Example{
-			Input:    map[string]any{"question": "q"},
-			Expected: map[string]any{"answer": "a"},
-		}
-	}
-	return out
-}
-
-type fakeEvaluator struct{}
-
-func (fakeEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
-	return []ExampleResult{{Score: 1, Feedback: "ok"}}, nil
-}
-
-type fakeReflector struct{}
-
-func (fakeReflector) Propose(context.Context, ReflectionRequest) (string, error) {
-	return "better prompt", nil
-}
-
-type scriptedEvaluator struct {
-	trainSize int
-	scoreFor  func(candidate Candidate, examples []program.Example) float64
-}
-
-func (e *scriptedEvaluator) Evaluate(_ context.Context, candidate Candidate, examples []program.Example) ([]ExampleResult, error) {
-	scoreFn := e.scoreFor
-	if scoreFn == nil {
-		scoreFn = func(Candidate, []program.Example) float64 { return 0 }
-	}
-	out := make([]ExampleResult, len(examples))
-	for i := range out {
-		out[i] = ExampleResult{Score: scoreFn(candidate, examples), Feedback: "ok"}
-	}
-	return out, nil
-}
-
-type scriptedReflector struct {
-	proposal string
-	err      error
-	modules  []string
-}
-
-type badLengthEvaluator struct{}
-
-func (badLengthEvaluator) Evaluate(context.Context, Candidate, []program.Example) ([]ExampleResult, error) {
-	return []ExampleResult{{Score: 1, Feedback: "ok"}}, nil
-}
-
-func (r *scriptedReflector) Propose(_ context.Context, req ReflectionRequest) (string, error) {
-	r.modules = append(r.modules, req.ModuleName)
-	if r.err != nil {
-		return "", r.err
-	}
-	return r.proposal, nil
-}
-
-func assertFileExists(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("Stat(%q) error: %v", path, err)
-	}
-}
-
-func readEvents(t *testing.T, path string) ([]eventRecord, error) {
-	t.Helper()
-	lines, err := readJSONLLines(path)
-	if err != nil {
-		return nil, err
-	}
-	events := make([]eventRecord, 0, len(lines))
-	for _, line := range lines {
-		var ev eventRecord
-		if err := json.Unmarshal([]byte(line), &ev); err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, nil
-}
-
-func containsEventType(events []eventRecord, typ string) bool {
-	_, ok := findEventType(events, typ)
-	return ok
-}
-
-func findEventType(events []eventRecord, typ string) (eventRecord, bool) {
-	for _, ev := range events {
-		if ev.Type == typ {
-			return ev, true
-		}
-	}
-	return eventRecord{}, false
-}
-
 func TestOptimizeNoPersistenceWhenRunDirEmpty(t *testing.T) {
 	prog := singleModuleProgram()
 	train := makeTrainExamples(3)
@@ -830,10 +889,38 @@ func TestOptimizeWritesFailedProposalTrajectoryWhenLogTracesEnabled(t *testing.T
 	}
 }
 
-func dirNames(entries []os.DirEntry) string {
-	names := make([]string, len(entries))
-	for i, e := range entries {
-		names[i] = e.Name()
+func TestOptimizeAcceptsProposalUsingModuleEvaluatorScore(t *testing.T) {
+	prog := twoModuleProgramWithRetrieverEvaluator()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(40, 2, 11))
+	opts.RunDir = runDir
+	opts.Evaluator = &moduleAwareEvaluator{}
+	opts.Reflector = &scriptedReflector{proposal: "retrieve v2"}
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
 	}
-	return strings.Join(names, ", ")
+	paths := newRunArtifacts(runDir)
+	assertFileExists(t, filepath.Join(paths.CandidatesDir, "0001.json"))
+}
+
+func TestOptimizeRejectsProposalWhenModuleEvaluatorDoesNotImprove(t *testing.T) {
+	prog := twoModuleProgramWithRetrieverEvaluator()
+	train := makeTrainExamples(4)
+	runDir := t.TempDir()
+	opts := baseOpts(prog, train, engineConfig(40, 2, 13))
+	opts.RunDir = runDir
+	opts.Evaluator = &moduleAwareEvaluator{}
+	opts.Reflector = &scriptedReflector{proposal: "retrieve worse"}
+
+	_, err := Optimize(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Optimize() unexpected error: %v", err)
+	}
+	paths := newRunArtifacts(runDir)
+	if _, err := os.Stat(filepath.Join(paths.CandidatesDir, "0001.json")); err == nil {
+		t.Fatal("candidates/0001.json exists, want rejection with seed-only pool")
+	}
 }

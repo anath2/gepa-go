@@ -20,11 +20,11 @@ type inspectFlags struct {
 }
 
 type inspectPoolState struct {
-	Iteration     int                    `json:"iteration"`
-	MetricCalls   int                    `json:"metric_calls"`
-	Candidates    []inspectCandidateRec  `json:"candidates"`
-	TrainScores   [][]float64            `json:"train_scores"`
-	BestCandidate int                    `json:"best_candidate"`
+	Iteration     int                   `json:"iteration"`
+	MetricCalls   int                   `json:"metric_calls"`
+	Candidates    []inspectCandidateRec `json:"candidates"`
+	TrainScores   [][]float64           `json:"train_scores"`
+	BestCandidate int                   `json:"best_candidate"`
 }
 
 type inspectCandidateRec struct {

@@ -113,7 +113,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 
 		// Score parent on the minibatch: sigma, the "before" score (Alg. 1, line 13).
 		parentPrompts := state.Candidates[parentID].Prompts
-		parentEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, parentPrompts, batch)
+		parentEval, err := evaluateProposalCandidate(ctx, &state, opts.Evaluator, opts.Program, parentPrompts, batch, moduleName)
 		if err != nil {
 			return Result{}, err
 		}
@@ -162,7 +162,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 
 		// Score the proposal on the same minibatch: sigma', the "after" score (Alg. 1, line 13).
 		proposal := mutatedCandidate(parentPrompts, moduleName, proposalOut.Instruction)
-		proposalEval, err := evaluateCandidate(ctx, &state, opts.Evaluator, proposal, batch)
+		proposalEval, err := evaluateProposalCandidate(ctx, &state, opts.Evaluator, opts.Program, proposal, batch, moduleName)
 		if err != nil {
 			return Result{}, err
 		}
