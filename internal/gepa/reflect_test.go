@@ -368,3 +368,89 @@ func TestExtractInstructionBlockRejectsMissingBlock(t *testing.T) {
 		t.Fatalf("extractInstructionBlock() error = %v, want errInstructionBlockMissing", err)
 	}
 }
+
+func TestRenderReflectionPromptIncludesModuleEvaluatorFeedback(t *testing.T) {
+	prompt, err := renderReflectionPrompt(ReflectionRequest{
+		Candidate:  Candidate{"mod": "Do the task."},
+		ParentID:   0,
+		ModuleName: "mod",
+		Module: program.Module{
+			Name:         "mod",
+			InputSchema:  program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{"x": {Kind: program.KindString}}},
+			OutputSchema: program.Schema{Kind: program.KindObject, Fields: map[string]program.Schema{"y": {Kind: program.KindString}}},
+		},
+		Examples: []program.Example{{
+			Input:    map[string]any{"x": "in"},
+			Expected: map[string]any{"answer": "want"},
+		}},
+		Results: []ExampleResult{{
+			Score:    0,
+			Feedback: "expected want, got wrong",
+			Output:   map[string]any{"answer": "wrong"},
+			ModuleTraces: []ModuleTrace{{
+				ModuleName: "mod",
+				Input:      map[string]any{"x": "in"},
+				Output:     map[string]any{"y": "bad"},
+				Evaluation: &ModuleEvaluation{
+					Score:    0.25,
+					Feedback: "module-specific feedback",
+					Source:   EvalSourceExternalEvaluator,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("renderReflectionPrompt() error = %v", err)
+	}
+	for _, want := range []string{
+		"Selected module evaluator score:",
+		"0.25",
+		"Selected module evaluator feedback:",
+		"module-specific feedback",
+		"Global score:",
+		"Global feedback:",
+		"expected want, got wrong",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("rendered prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+}
+
+func TestRenderReflectionPromptIncludesContractFeedbackSource(t *testing.T) {
+	prompt, err := renderReflectionPrompt(ReflectionRequest{
+		Candidate:  Candidate{"mod": "Do the task."},
+		ParentID:   0,
+		ModuleName: "mod",
+		Module:     program.Module{Name: "mod"},
+		Examples: []program.Example{{
+			Input:    map[string]any{"x": "in"},
+			Expected: map[string]any{"answer": "want"},
+		}},
+		Results: []ExampleResult{{
+			Score:    0,
+			Feedback: "module mod output invalid",
+			ModuleTraces: []ModuleTrace{{
+				ModuleName: "mod",
+				Evaluation: &ModuleEvaluation{
+					Score:    0,
+					Feedback: "output.y: expected string, got int",
+					Source:   EvalSourceSchema,
+					Error:    "output.y: expected string, got int",
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("renderReflectionPrompt() error = %v", err)
+	}
+	for _, want := range []string{
+		"Selected module evaluator source: schema",
+		"Selected module evaluator feedback:",
+		"expected string, got int",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("rendered prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+}

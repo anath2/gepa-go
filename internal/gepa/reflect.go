@@ -173,9 +173,17 @@ func renderReflectionPrompt(req ReflectionRequest) (string, error) {
 			if trace.Error != "" {
 				fmt.Fprintf(&b, "Selected module error: %s\n", trace.Error)
 			}
+			if trace.Evaluation != nil {
+				fmt.Fprintf(&b, "Selected module evaluator source: %s\n", trace.Evaluation.Source)
+				fmt.Fprintf(&b, "Selected module evaluator score: %.6g\n", trace.Evaluation.Score)
+				fmt.Fprintf(&b, "Selected module evaluator feedback: %s\n", trace.Evaluation.Feedback)
+				if trace.Evaluation.Error != "" {
+					fmt.Fprintf(&b, "Selected module evaluator error: %s\n", trace.Evaluation.Error)
+				}
+			}
 		}
-		fmt.Fprintf(&b, "Score: %.6g\n", req.Results[i].Score)
-		fmt.Fprintf(&b, "Feedback: %s\n\n", req.Results[i].Feedback)
+		fmt.Fprintf(&b, "Global score: %.6g\n", req.Results[i].Score)
+		fmt.Fprintf(&b, "Global feedback: %s\n\n", req.Results[i].Feedback)
 	}
 
 	return b.String(), nil
