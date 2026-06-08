@@ -132,14 +132,28 @@ func TestParetoFrequenciesHandComputed(t *testing.T) {
 		{0, 1, 0, 1}, // C leads examples 1,3
 	})
 
-	freqs, err := paretoFrequencies(state)
+	freqs, err := paretoFreqMap(state)
 	if err != nil {
-		t.Fatalf("paretoFrequencies() unexpected error: %v", err)
+		t.Fatalf("paretoSurvivors() unexpected error: %v", err)
 	}
 	want := map[int]int{0: 3, 1: 2, 2: 2}
 	if !reflect.DeepEqual(freqs, want) {
-		t.Fatalf("paretoFrequencies() = %#v, want %#v", freqs, want)
+		t.Fatalf("paretoSurvivors() freqs = %#v, want %#v", freqs, want)
 	}
+}
+
+// paretoFreqMap adapts the index-aligned paretoSurvivors output into a
+// {candidateID: f[k]} map for assertions on the frequency tally.
+func paretoFreqMap(state poolState) (map[int]int, error) {
+	survivors, freqs, err := paretoSurvivors(state)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]int, len(survivors))
+	for i, id := range survivors {
+		out[id] = freqs[i]
+	}
+	return out, nil
 }
 
 // TestParetoFrequenciesNobodySolvedColumn checks the "noise-floor" column case:
@@ -151,13 +165,13 @@ func TestParetoFrequenciesNobodySolvedColumn(t *testing.T) {
 		{0, 1, 0}, // B leads example 1; tied at 0 on example 2
 	})
 
-	freqs, err := paretoFrequencies(state)
+	freqs, err := paretoFreqMap(state)
 	if err != nil {
-		t.Fatalf("paretoFrequencies() unexpected error: %v", err)
+		t.Fatalf("paretoSurvivors() unexpected error: %v", err)
 	}
 	want := map[int]int{0: 2, 1: 2}
 	if !reflect.DeepEqual(freqs, want) {
-		t.Fatalf("paretoFrequencies() = %#v, want %#v", freqs, want)
+		t.Fatalf("paretoSurvivors() freqs = %#v, want %#v", freqs, want)
 	}
 }
 
@@ -227,15 +241,15 @@ func TestParetoFrontierAllRowsIdentical(t *testing.T) {
 		t.Fatalf("paretoFrontier() = %#v, want %#v", got, want)
 	}
 
-	freqs, err := paretoFrequencies(state)
+	freqs, err := paretoFreqMap(state)
 	if err != nil {
-		t.Fatalf("paretoFrequencies() unexpected error: %v", err)
+		t.Fatalf("paretoSurvivors() unexpected error: %v", err)
 	}
 	// Every column has all three at the max, so each candidate gets +1 per column.
 	// 3 columns * 1 each = 3.
 	wantFreqs := map[int]int{0: 3, 1: 3, 2: 3}
 	if !reflect.DeepEqual(freqs, wantFreqs) {
-		t.Fatalf("paretoFrequencies() = %#v, want %#v", freqs, wantFreqs)
+		t.Fatalf("paretoSurvivors() freqs = %#v, want %#v", freqs, wantFreqs)
 	}
 
 	selector := paretoSelector{}
