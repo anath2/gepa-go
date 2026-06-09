@@ -3,6 +3,8 @@ package gepa
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/anath2/gepa-go/internal/program"
 )
@@ -151,7 +153,7 @@ func setSeedTrainScores(s *poolState, trainLen int, trainScores []float64) error
 	if len(trainScores) != trainLen {
 		return fmt.Errorf("set seed train scores: got %d scores, want %d: %w", len(trainScores), trainLen, errStateInvariant)
 	}
-	s.TrainScores[0] = append([]float64(nil), trainScores...)
+	s.TrainScores[0] = slices.Clone(trainScores)
 	if err := recomputeBestCandidate(s); err != nil {
 		return err
 	}
@@ -169,14 +171,14 @@ func acceptCandidate(s *poolState, trainLen int, p acceptCandidateParams) (int, 
 	newID := len(s.Candidates)
 	record := candidateRecord{
 		ID:            newID,
-		ParentIDs:     append([]int(nil), p.ParentIDs...),
+		ParentIDs:     slices.Clone(p.ParentIDs),
 		ProposalKind:  p.ProposalKind,
 		MutatedModule: p.MutatedModule,
 		CreatedAtIter: p.CreatedAtIter,
 		Prompts:       cloneCandidate(p.Prompts),
 	}
 	s.Candidates = append(s.Candidates, record)
-	s.TrainScores = append(s.TrainScores, append([]float64(nil), p.TrainScores...))
+	s.TrainScores = append(s.TrainScores, slices.Clone(p.TrainScores))
 
 	if err := recomputeBestCandidate(s); err != nil {
 		return 0, err
@@ -264,9 +266,5 @@ func validateState(s *poolState, trainLen int) error {
 }
 
 func cloneCandidate(candidate Candidate) Candidate {
-	out := make(Candidate, len(candidate))
-	for name, prompt := range candidate {
-		out[name] = prompt
-	}
-	return out
+	return maps.Clone(candidate)
 }

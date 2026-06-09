@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 const (
@@ -179,9 +180,9 @@ func mergeEventContext(state poolState, parentIDs []int, batchIndices []int) eve
 	return eventRecord{
 		Iteration:    state.Iteration,
 		MetricCalls:  state.MetricCalls,
-		ParentIDs:    append([]int(nil), parentIDs...),
+		ParentIDs:    slices.Clone(parentIDs),
 		ProposalKind: proposalMerge,
-		BatchIndices: append([]int(nil), batchIndices...),
+		BatchIndices: slices.Clone(batchIndices),
 	}
 }
 
@@ -231,7 +232,7 @@ func proposalEventContext(state poolState, parentID int, moduleName string, batc
 		ParentIDs:     []int{parentID},
 		ProposalKind:  proposalReflection,
 		MutatedModule: moduleName,
-		BatchIndices:  append([]int(nil), batchIndices...),
+		BatchIndices:  slices.Clone(batchIndices),
 	}
 }
 

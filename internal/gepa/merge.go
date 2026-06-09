@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 
 	"github.com/anath2/gepa-go/internal/program"
 )
@@ -190,7 +191,7 @@ func findMergePair(state poolState, tracker *mergeTracker, rng *rand.Rand, merge
 
 			ancestorsI := ancestorsFor(i)
 			ancestorsJ := ancestorsFor(j)
-			if containsInt(ancestorsI, j) || containsInt(ancestorsJ, i) {
+			if slices.Contains(ancestorsI, j) || slices.Contains(ancestorsJ, i) {
 				continue
 			}
 
@@ -216,15 +217,6 @@ func findMergePair(state poolState, tracker *mergeTracker, rng *rand.Rand, merge
 		rng = rand.New(rand.NewSource(0))
 	}
 	return viablePairs[rng.Intn(len(viablePairs))], true
-}
-
-func containsInt(list []int, target int) bool {
-	for _, v := range list {
-		if v == target {
-			return true
-		}
-	}
-	return false
 }
 
 // common ancestor prompts and take complementary module prompts from descendants.
@@ -279,11 +271,6 @@ func minibatchMeanFromScores(scores []float64, batchIndices []int) (float64, err
 	return meanScore(values)
 }
 
-// mergeAccepts reports whether a proposal beats its best parent on a minibatch mean score.
-func mergeAccepts(proposalMean, bestParentMean float64) bool {
-	return strictlyImproves(bestParentMean, proposalMean)
-}
-
 // tryMergeIteration attempts one System-Aware Merge step (paper Algs. 3 & 4).
 // Returns handled=true when merge ran (accepted or rejected); false when no
 // compatible pair was found and the caller should fall through to reflection.
@@ -317,10 +304,7 @@ func tryMergeIteration(ctx context.Context, p mergeIterationParams) (handled boo
 	if err != nil {
 		return false, false, err
 	}
-	bestParentMean := parent1Mean
-	if parent2Mean > bestParentMean {
-		bestParentMean = parent2Mean
-	}
+	bestParentMean := max(parent1Mean, parent2Mean)
 
 	if err := p.writer.mergeRequested(*p.state, parentIDs, pair.Ancestor, batchIndices); err != nil {
 		return false, false, err
@@ -338,7 +322,7 @@ func tryMergeIteration(ctx context.Context, p mergeIterationParams) (handled boo
 		return false, false, err
 	}
 
-	if !mergeAccepts(proposalEval.Mean, bestParentMean) {
+	if !strictlyImproves(bestParentMean, proposalEval.Mean) {
 		if err := p.writer.mergeRejected(*p.state, parentIDs, batchIndices, bestParentMean, proposalEval.Mean); err != nil {
 			return false, false, err
 		}

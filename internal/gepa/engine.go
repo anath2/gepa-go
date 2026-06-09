@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/anath2/gepa-go/internal/program"
 )
@@ -147,7 +148,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 				ParentIDs:       []int{parentID},
 				ProposalKind:    proposalReflection,
 				MutatedModule:   moduleName,
-				BatchIndices:    append([]int(nil), batchIndices...),
+				BatchIndices:    slices.Clone(batchIndices),
 				Accepted:        false,
 				Reason:          proposalOut.Reason,
 				ParentPrompt:    parentPrompts[moduleName],
@@ -182,7 +183,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 				ParentIDs:            []int{parentID},
 				ProposalKind:         proposalReflection,
 				MutatedModule:        moduleName,
-				BatchIndices:         append([]int(nil), batchIndices...),
+				BatchIndices:         slices.Clone(batchIndices),
 				Accepted:             false,
 				Reason:               rejectReasonNoImprovement,
 				ParentMean:           &parentEval.Mean,
@@ -231,7 +232,7 @@ func Optimize(ctx context.Context, opts Options) (Result, error) {
 			ParentIDs:            []int{parentID},
 			ProposalKind:         proposalReflection,
 			MutatedModule:        moduleName,
-			BatchIndices:         append([]int(nil), batchIndices...),
+			BatchIndices:         slices.Clone(batchIndices),
 			Accepted:             true,
 			ParentMean:           &parentEval.Mean,
 			ProposalMean:         &proposalEval.Mean,

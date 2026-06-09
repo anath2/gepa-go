@@ -2,8 +2,9 @@ package gepa
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
-	"sort"
+	"slices"
 )
 
 type paretoSelector struct{}
@@ -76,11 +77,7 @@ func paretoSurvivors(state poolState) (survivors []int, freqs []int, err error) 
 	}
 
 	// Step 2: collect eligible ids in sorted order for deterministic output.
-	candidates := make([]int, 0, len(eligible))
-	for id := range eligible {
-		candidates = append(candidates, id)
-	}
-	sort.Ints(candidates)
+	candidates := slices.Sorted(maps.Keys(eligible))
 
 	// Step 3: prune strictly Pareto-dominated members.
 	for _, k := range candidates {
