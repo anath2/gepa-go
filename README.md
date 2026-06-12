@@ -2,10 +2,26 @@
 
 This repo is the Go port of the GEPA algorithm. It currently ships as a CLI binary.
 
-**Caution:** This implementation is unstable and mostly for educational purposes.
-For the canonical version, check out the [DSPy implementation](https://github.com/stanfordnlp/dspy).
-
 arXiv: https://arxiv.org/abs/2507.19457
+
+## Usage
+
+```bash
+go build -o gepa ./cmd/gepa
+
+export API_KEY=...
+export BASE_URL=...
+
+./gepa optimize \
+  --program examples/smoke_minimal/program.json \
+  --config examples/smoke_minimal/config.json \
+  --train examples/smoke_minimal/train.jsonl \
+  --val examples/smoke_minimal/val.jsonl
+```
+
+**Caution:** This implementation is unstable and mostly for educational purposes.
+
+For the canonical version, check out the [DSPy implementation](https://github.com/stanfordnlp/dspy).
 
 ## Basics
 
