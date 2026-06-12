@@ -2,7 +2,8 @@
 
 This repo is the Go port of the GEPA algorithm. It currently ships as a CLI binary.
 
-**Caution:** This implementation is unstable and mostly for educational purposes. For the canonical version, check out the [DSPy implementation](https://github.com/stanfordnlp/dspy).
+**Caution:** This implementation is unstable and mostly for educational purposes.
+For the canonical version, check out the [DSPy implementation](https://github.com/stanfordnlp/dspy).
 
 arXiv: https://arxiv.org/abs/2507.19457
 
@@ -15,7 +16,7 @@ GEPA treats prompts as evolvable components of an LLM program, which are evolved
 ### Program
 A program is a series of LLM modules that are executed in series. Think of a module as a line of code in a program. A module is essentially the following triple: (input_schema, output_schema, prompt). A gate is a module with boolean output. A program could also have other fields such as tools and external evaluators, which are not strictly necessary.
 
-![Flowchart showing a program](./docs/img/program.jpg)
+<img src="./docs/img/program.jpg" alt="Flowchart showing a program" width="450">
 
 ### Candidate
 
@@ -28,19 +29,19 @@ A dataset consists of inputs to the program and labels or correct answers. Again
 ### Pareto sampling
 Pareto frontier refers to a list of candidates that do best on at least one of the training examples. Sampling from the Pareto set is weighted based on the number of candidate wins.
 
-![Pareto sampling animation](./docs/img/pareto.gif)
+<img src="./docs/img/pareto.gif" alt="Pareto sampling animation" width="450">
 
 ### Update Step: Reflection and Crossover
 
 #### Reflection
 Reflection is the primary mechanism of prompt update. A module is selected per iteration in round-robin fashion and a reflection LLM takes the evaluation traces and mutates the module prompt.
 
-![reflection animation](./docs/img/reflection.gif)
+<img src="./docs/img/reflection.gif" alt="reflection animation" width="450">
 
 #### Merge/Crossover
 Merge is only possible when 2 parents have a single ancestor. A child candidate is formed by merging prompts from different modules.
 
-![crossover animation](./docs/img/crossover.gif)
+<img src="./docs/img/crossover.gif" alt="crossover animation" width="450">
 
 ## Algorithm
 
@@ -54,5 +55,5 @@ A single iteration of GEPA is straightforward.
 4. Evaluate on a subset of the samples known as a mini-batch
 5. If it outperforms the parent, evaluate on the full training set and add to the candidate pool.
 
-![Animation of single iteration loop](./docs/img/algorithm.gif)
+<img src="./docs/img/algorithm.gif" alt="Animation of single iteration loop" width="450">
 
